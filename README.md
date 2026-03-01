@@ -1,0 +1,2 @@
+# trendnews-autoReporting
+トレンドニュースに関するあらゆる情報を自動通知してくれるスクリプト
