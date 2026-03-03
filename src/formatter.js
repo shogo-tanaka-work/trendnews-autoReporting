@@ -1,7 +1,52 @@
 const FEED_EMOJI = {
-  'OpenAI News': ':robot_face:',
+  // AI企業公式
+  'OpenAI Blog': ':robot_face:',
+  'Google DeepMind': ':brain:',
+  'Anthropic News': ':crystal_ball:',
+  // 国内AIメディア
+  'ITmedia AI+': ':bulb:',
+  'AIsmiley': ':smile:',
+  // クラウド AI/ML
+  'AWS Machine Learning Blog': ':aws:',
+  'Google Cloud Blog (AI/ML)': ':cloud:',
+  // 国内IT総合
+  'ITmedia': ':computer:',
+  'Publickey': ':key:',
   'Qiita (LLM)': ':green_book:',
   'Note (LLM)': ':memo:',
+  // AWS
+  'AWS News Blog': ':aws:',
+  'AWS Japan Blog': ':jp:',
+  // Google Workspace
+  'Google Workspace Updates': ':google:',
+  'Google Workspace Release Notes': ':gear:',
+  // ウイスキー
+  'BARREL': ':tumbler_glass:',
+  'Dear WHISKY': ':whisky:',
+  'Whisky Magazine Japan': ':book:',
+  // 筋トレ
+  'BarBend': ':weight_lifter:',
+  'Breaking Muscle': ':muscle:',
+  'Muscle & Fitness': ':fire:',
+  'VITUP!': ':sports_medal:',
+  // ビジネス
+  'Workship MAGAZINE': ':briefcase:',
+  'フリーランス協会': ':handshake:',
+  'マネーフォワード クラウドブログ': ':moneybag:',
+  'SoloPro': ':star2:',
+  'LIGブログ (フリーランス)': ':art:',
+  'レバテックフリーランス': ':chart_with_upwards_trend:',
+  'Qiita (個人事業主)': ':green_book:',
+  'ライフハッカー': ':zap:',
+  'Note (フリーランス)': ':memo:',
+  // 経済
+  'Yahoo!ニュース (経済)': ':yen:',
+  'ロイター (経済)': ':globe_with_meridians:',
+  '日経新聞 (Google News)': ':newspaper:',
+  'Bloomberg (Google News)': ':chart_with_downwards_trend:',
+  'Investing.com': ':chart_with_upwards_trend:',
+  'ZUU online': ':bank:',
+  'CoinDesk JAPAN': ':coin:',
 };
 
 const MAX_ARTICLES_PER_FEED = 5;
@@ -85,13 +130,14 @@ function buildFeedBlocks(feedName, articles) {
 }
 
 /**
- * 全フィードの集約結果から Slack Block Kit メッセージペイロードを生成する
+ * カテゴリ単位の集約結果から Slack Block Kit メッセージペイロードを生成する
  *
  * @param {Map<string, { title: string; link: string; isoDate: string }[]>} grouped
+ * @param {string} categoryLabel
  * @param {number} filterHours
  * @returns {{ text: string; blocks: object[] } | null}
  */
-export function buildSlackPayload(grouped, filterHours = 24) {
+export function buildSlackPayload(grouped, categoryLabel, filterHours = 24) {
   const totalCount = [...grouped.values()].reduce((s, a) => s + a.length, 0);
 
   if (totalCount === 0) return null;
@@ -110,7 +156,7 @@ export function buildSlackPayload(grouped, filterHours = 24) {
       type: 'header',
       text: {
         type: 'plain_text',
-        text: `📰 トレンドニュース (過去${filterHours}時間)`,
+        text: `📰 ${categoryLabel} (過去${filterHours}時間)`,
         emoji: true,
       },
     },
@@ -137,11 +183,10 @@ export function buildSlackPayload(grouped, filterHours = 24) {
     }
   }
 
-  // Slack の上限は 50 ブロック
   const safeBlocks = blocks.slice(0, 50);
 
   return {
-    text: `📰 トレンドニュース: 過去${filterHours}時間で ${totalCount}件の新着記事があります。`,
+    text: `📰 ${categoryLabel}: 過去${filterHours}時間で ${totalCount}件の新着記事があります。`,
     blocks: safeBlocks,
   };
 }
