@@ -3,6 +3,8 @@ import cron from 'node-cron';
 import { WebClient } from '@slack/web-api';
 import { FEED_CATEGORIES, fetchByCategory } from './rss.js';
 import { buildSlackPayload } from './formatter.js';
+import { fetchUpcomingEvents, fetchPopularEvents } from './connpass.js';
+import { buildConnpassPayload } from './connpassFormatter.js';
 
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 const DEFAULT_CRON = '0 8,20 * * *';
@@ -72,8 +74,59 @@ async function runAll() {
   }
 }
 
+// ── Connpass セミナー通知 ──
+const CONNPASS_CHANNEL = process.env.SLACK_CHANNEL_CONNPASS;
+const CONNPASS_CRON = process.env.CRON_CONNPASS || '0 9 * * *';
+const CONNPASS_KEYWORDS = (process.env.CONNPASS_KEYWORDS || '')
+  .split(',')
+  .map((k) => k.trim())
+  .filter(Boolean);
+
+async function runConnpass() {
+  if (!CONNPASS_CHANNEL) {
+    console.log('[Connpass] SLACK_CHANNEL_CONNPASS が未設定のためスキップします。');
+    return;
+  }
+  if (!process.env.CONNPASS_API_KEY) {
+    console.error('[Connpass] CONNPASS_API_KEY が未設定のためスキップします。');
+    return;
+  }
+
+  console.log(`[${new Date().toISOString()}] Connpassセミナー情報: 取得を開始...`);
+
+  // Connpass API v2 はレート制限（1秒1リクエスト）があるため直列で取得
+  const upcoming = await fetchUpcomingEvents(CONNPASS_KEYWORDS);
+  const popular = await fetchPopularEvents(CONNPASS_KEYWORDS);
+
+  console.log(
+    `[Connpass] 直近イベント: ${upcoming.length}件, 人気イベント: ${popular.length}件`
+  );
+
+  if (upcoming.length === 0 && popular.length === 0) {
+    console.log('[Connpass] イベントが見つからないため通知をスキップします。');
+    return;
+  }
+
+  const payload = buildConnpassPayload(upcoming, popular);
+  if (!payload) return;
+
+  try {
+    await slack.chat.postMessage({
+      channel: CONNPASS_CHANNEL,
+      text: payload.text,
+      blocks: payload.blocks,
+    });
+    console.log(
+      `[Slack] Connpassセミナー情報: メッセージを送信しました (channel: ${CONNPASS_CHANNEL})。`
+    );
+  } catch (err) {
+    console.error(`[Slack] Connpassセミナー情報: 送信エラー:`, err.message);
+  }
+}
+
 // 起動時に全カテゴリを即時実行
 runAll();
+runConnpass();
 
 // カテゴリごとに個別の cron スケジュールを登録
 for (const config of categoryConfigs) {
@@ -90,5 +143,23 @@ for (const config of categoryConfigs) {
 
   console.log(
     `[Cron] ${config.label}: スケジュール設定完了 — ${config.cronSchedule} (Asia/Tokyo)`
+  );
+}
+
+// Connpass 用のスケジュール登録
+if (CONNPASS_CHANNEL) {
+  if (!cron.validate(CONNPASS_CRON)) {
+    console.error(
+      `[Error] Connpass の CRON 式が正しくありません: ${CONNPASS_CRON}`
+    );
+    process.exit(1);
+  }
+
+  cron.schedule(CONNPASS_CRON, () => runConnpass(), {
+    timezone: 'Asia/Tokyo',
+  });
+
+  console.log(
+    `[Cron] Connpassセミナー情報: スケジュール設定完了 — ${CONNPASS_CRON} (Asia/Tokyo)`
   );
 }
