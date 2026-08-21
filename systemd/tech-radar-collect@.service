@@ -1,0 +1,29 @@
+[Unit]
+Description=Tech Radar collector (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=techradar
+Group=techradar
+WorkingDirectory=/opt/tech-radar
+EnvironmentFile=/etc/tech-radar/environment
+ExecStart=/usr/bin/node dist/jobs/collect.js %i
+
+# 1ソースの失敗では非ゼロ終了しない（全ソース失敗時のみ exit 1）。
+# Type=oneshot では Restart= を使えないため、失敗時は次回のタイマー起動で再試行する。
+TimeoutStartSec=600
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/opt/tech-radar/data
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tech-radar-collect-%i

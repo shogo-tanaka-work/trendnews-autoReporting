@@ -1,0 +1,26 @@
+[Unit]
+Description=Tech Radar Connpass notifier
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=techradar
+Group=techradar
+WorkingDirectory=/opt/tech-radar
+EnvironmentFile=/etc/tech-radar/environment
+ExecStart=/usr/bin/node dist/jobs/connpass.js
+TimeoutStartSec=300
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/opt/tech-radar/data
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tech-radar-connpass

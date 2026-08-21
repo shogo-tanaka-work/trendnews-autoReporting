@@ -1,0 +1,13 @@
+[Unit]
+Description=Tech Radar collector timer (%i)
+
+[Timer]
+# OnCalendar はカテゴリごとの drop-in で指定する。
+# `npm run gen:systemd` が systemd/generated/ 配下へ生成する。
+Unit=tech-radar-collect@%i.service
+Persistent=true
+RandomizedDelaySec=60
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

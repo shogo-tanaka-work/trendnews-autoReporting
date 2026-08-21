@@ -1,20 +1,41 @@
 {
   "name": "trendnews-auto-reporting",
-  "version": "1.0.0",
-  "description": "RSSフィードからトレンドニュースを取得してSlackへBlock Kit形式で通知するスクリプト",
+  "version": "2.0.0",
+  "description": "一次情報（RSS / GitHub Releases / YouTube Data API）を収集して SQLite へ蓄積し、Slack へ通知する Tech Intelligence 基盤",
   "type": "module",
-  "main": "src/index.js",
+  "main": "dist/api/server.js",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "build": "tsc",
+    "dev": "tsx watch src/api/server.ts",
+    "start": "node dist/api/server.js",
+    "collect": "tsx src/jobs/collect.ts",
+    "connpass": "tsx src/jobs/connpass.ts",
+    "gen:systemd": "tsx scripts/generate-systemd.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json"
   },
   "dependencies": {
-    "@slack/web-api": "^7.0.0",
+    "@hono/node-server": "^1.13.0",
+    "@slack/web-api": "^8.0.0",
+    "better-sqlite3": "^13.0.3",
     "dotenv": "^16.0.0",
-    "node-cron": "^3.0.0",
-    "rss-parser": "^3.13.0"
+    "hono": "^4.6.0",
+    "rss-parser": "^3.13.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.9.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "fsevents@2.3.3": true,
+    "better-sqlite3@13.0.3": true
   }
 }

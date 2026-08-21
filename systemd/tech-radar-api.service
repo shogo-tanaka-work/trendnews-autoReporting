@@ -1,0 +1,33 @@
+[Unit]
+Description=Tech Radar API (Hono)
+Documentation=file:///opt/tech-radar/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=techradar
+Group=techradar
+WorkingDirectory=/opt/tech-radar
+# 秘密値は systemd の EnvironmentFile から読む（root:techradar / 0640 で配置する）
+EnvironmentFile=/etc/tech-radar/environment
+ExecStart=/usr/bin/node dist/api/server.js
+Restart=on-failure
+RestartSec=5
+
+# 最小権限
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/opt/tech-radar/data
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tech-radar-api
+
+[Install]
+WantedBy=multi-user.target
