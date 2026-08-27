@@ -9,8 +9,9 @@ Type=simple
 User=techradar
 Group=techradar
 WorkingDirectory=/opt/tech-radar
-# 秘密値は systemd の EnvironmentFile から読む（root:techradar / 0640 で配置する）
-EnvironmentFile=/etc/tech-radar/environment
+# 秘密値はプロジェクトルート直下の environment から読む（root:techradar / 0640）。
+# 共有領域へ散らさないため /etc ではなく WorkingDirectory 直下へ置く。
+EnvironmentFile=/opt/tech-radar/environment
 ExecStart=/usr/bin/node dist/api/server.js
 Restart=on-failure
 RestartSec=5

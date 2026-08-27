@@ -8,7 +8,7 @@ Type=oneshot
 User=techradar
 Group=techradar
 WorkingDirectory=/opt/tech-radar
-EnvironmentFile=/etc/tech-radar/environment
+EnvironmentFile=/opt/tech-radar/environment
 ExecStart=/usr/bin/node dist/jobs/connpass.js
 TimeoutStartSec=300
 

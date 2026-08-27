@@ -27,3 +27,6 @@ npm-debug.log*
 # SQLite データ
 data/
 systemd/generated/
+
+# systemd の EnvironmentFile（プロジェクトルート直下・秘密値）
+/environment
