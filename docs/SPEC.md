@@ -31,36 +31,76 @@ SQLite へ蓄積し、新着だけを Slack へ通知する。二次情報（X /
 
 収集とスケジュールの正本は `src/config/categories.ts`。
 
-| カテゴリ | 内容 | 方式 | スケジュール(JST) |
-|---|---|---|---|
-| `ai_news` | AI 企業公式 / 国内 AI メディア | RSS | 08:00, 20:00 |
-| `engineer_news` | 国内 IT 総合 / AWS / Google Workspace | RSS | 08:10, 20:10 |
-| `economy_news` | 経済・市場・暗号資産 | RSS | 08:20, 20:20 |
-| `business_news` | 制度・バックオフィス・仕事術 | RSS | 08:30 |
-| `fitness_news` | 筋トレ | RSS | 17:00 |
-| `whiskey_news` | ウイスキー | RSS | 22:00 |
-| `tech_cloud` | AWS What's New / Cloudflare Changelog / GitHub Changelog / GCP Release Notes | RSS | 08:40, 20:40 |
-| `tech_ai` | LangGraph / LangChain / MCP / ADK / OpenAI Agents / Anthropic SDK ほか | GitHub Releases API | 08:50, 20:50 |
-| `tech_web` | React / Next.js / Vite / TanStack / Hono / TypeScript / Node / Bun / Deno | GitHub Releases API | 09:10 |
-| `tech_youtube` | 技術系チャンネルの新着 | YouTube Data API v3 | 10:00 |
-| Connpass | セミナー・勉強会 | Connpass API v2 | 09:00 |
+| カテゴリ | 内容 | 方式 | スケジュール(JST) | selector | 1回の上限 |
+|---|---|---|---|---|---|
+| `trend_digest` | はてブ / HN / Qiita / Zenn / GitHub 急上昇 / YouTube 急上昇 / Google Trends | ランキング API | 07:15 | ranking | 15 |
+| `economy_news` | 経済・市場・暗号資産 | RSS | 07:30 | ranking | 8 |
+| `ai_news` | AI 企業公式 / 国内 AI メディア | RSS | 08:00 | ranking | 10 |
+| `engineer_news` | 国内 IT 総合 / AWS / Google Workspace | RSS | 08:10 | ranking | 10 |
+| `tech_cloud` | AWS What's New / Cloudflare Changelog / GitHub Changelog / GCP Release Notes | RSS | 08:40, 20:40 | scoring | 8 |
+| `tech_ai` | LangGraph / LangChain / MCP / ADK / OpenAI Agents / Anthropic SDK ほか | GitHub Releases API | 08:50, 20:50 | scoring | 8 |
+| `tech_web` | React / Next.js / Vite / TanStack / Hono / TypeScript / Node / Bun / Deno | GitHub Releases API | 09:10 | scoring | 8 |
+| `tech_youtube` | 技術系チャンネルの新着 | YouTube Data API v3 | 10:00 | ranking | 5 |
+| `business_news` | 制度・バックオフィス・仕事術 | RSS | 土 09:00 | ranking | 10 |
+| `whiskey_news` | ウイスキー | RSS | 土 10:00 | ranking | 10 |
+| `fitness_news` | 筋トレ | RSS | 日 10:00 | ranking | 10 |
+| Connpass | セミナー・勉強会 | Connpass API v2 | 09:00 | — | — |
 
-`tech_*` はルールベーススコアリング（`src/config/scoring.ts`）で `minScore` 未満を通知から除外し、
-スコア降順で並べる。既存6カテゴリは全件を発行日時の降順で通知する（現行仕様の維持）。
+### 通知量の設計
+
+通知量は「頻度（`schedule`）」と「1回の件数（`maxPerNotification`）」の2軸で決める。
+情報源ごとの上限（`maxPerSource`）だけでは、情報源を増やすたびに通知量が増えてしまうため、
+カテゴリ全体の上限を必ず併用する。
+
+速報（1日2回）は `tech_cloud` と `tech_ai` だけに絞っている。実装判断に直結し、翌朝まで
+待つと手戻りが出るのがこの2つだからで、残りは日次または週次のダイジェストにしている。
+
+週次カテゴリは7日分の候補から上位を選ぶため、件数が減るだけでなく選抜の質も上がる。
+
+### selector
+
+| selector | 選び方 | 用途 |
+|---|---|---|
+| `ranking` | 情報源内の順位を 0〜1 に正規化し、情報源の重みを掛けて採点する。同じ URL が複数の情報源に出たら束ねて加点する | 一般ニュース。上位だけ読めばよいもの |
+| `scoring` | `src/config/scoring.ts` のキーワード配点で `minScore` 未満を除外し、スコア降順で並べる | 一次情報。技術的な重さで判断したいもの |
+| `per_source` | 情報源ごとに束ねて発行日時の降順で並べる | 取りこぼしを許さないもの（現在は未使用） |
+
+順位は `articles.source_rank` に保存する。RSS はフィードの掲載順、GitHub Releases は
+リリース順、YouTube は uploads playlist の並びをそのまま順位として扱う。
+
+### ランキング情報源（`type: 'ranking'`）
+
+「決めた購読先の新着」ではなく「世の中の上位N件」を取る情報源。`provider` で実装を切り替える。
+
+| provider | 取得元 | 鍵 | 重み | 拾うもの |
+|---|---|---|---|---|
+| `hatena` | ホットエントリ RSS（テクノロジー / 世の中・経済） | 不要 | 1.0 | 日本語で今読まれている記事 |
+| `hackernews` | Algolia API（24h・30points 超） | 不要 | 0.9 | 海外技術トレンド |
+| `google_trends` | SerpAPI `google_trends_trending_now`（JP） | 必須 | 0.9 | 急上昇検索ワード |
+| `qiita` | API v2（直近3日を LGTM 順） | 不要 | 0.8 | 日本の技術記事 |
+| `zenn` | `/api/articles?order=daily`（非公式） | 不要 | 0.8 | 日本の技術記事 |
+| `github_trending` | Search API（直近7日・star 順） | 任意 | 0.7 | 急上昇リポジトリ |
+| `youtube_trending` | Data API v3（急上昇・Science & Technology・JP） | 必須 | 0.6 | 技術系の急上昇動画 |
+
+鍵が必須の provider は、鍵が未設定なら警告を残して空を返す（例外にしない）。
+毎回 job が `partial` になると本当の障害が埋もれるため。
+
+ラッコキーワードは有料前提のため入れていない。X API は 403 が X 側要因で確定しているため入れない。
 
 ## データモデル
 
 | テーブル | 役割 |
 |---|---|
 | `sources` | 情報源。カテゴリ設定から毎回 upsert する |
-| `articles` | 収集した記事。`UNIQUE(source_id, external_id)` で重複取得を防ぐ |
+| `articles` | 収集した記事。`UNIQUE(source_id, external_id)` で重複取得を防ぐ。`source_rank` に情報源内の掲載順を持つ |
 | `article_scores` | ルールベーススコアと importance（A/B/C）。LLM 判定用の列を空けてある |
 | `job_runs` | 実行履歴。無人運用時の障害確認用 |
 
 `articles.notified_at` が NULL のもの（未通知キュー）を毎回の収集後に引き直して Slack へ送る。
 **時間窓（旧 `FILTER_HOURS`）ではなく DB で重複排除する**ため、実行間隔がずれても取りこぼし・
 二重通知が起きず、Slack 送信に失敗した記事は次回実行で再送される。
-`minScore` / `maxPerSource` で選外になった記事は、その場で処理済みにして滞留させない。
+`minScore` / `maxPerSource` / `maxPerNotification` で選外になった記事は、その場で処理済みにして
+滞留させない。Slack には出ないが DB には残るため、`GET /articles?category=...` で後から引ける。
 
 同じ URL を複数カテゴリで購読することは意図的に許すので、`url` に UNIQUE は張らない。
 
@@ -95,12 +135,16 @@ SLACK_CHANNEL_TECH_CLOUD=C0XXXXXXXXX
 SLACK_CHANNEL_TECH_WEB=C0XXXXXXXXX
 SLACK_CHANNEL_TECH_AI=C0XXXXXXXXX
 SLACK_CHANNEL_TECH_YOUTUBE=C0XXXXXXXXX
+SLACK_CHANNEL_TREND_DIGEST=C0XXXXXXXXX
 
 # 情報源の API キー
 # GITHUB_TOKEN は public repo の read のみ（未設定でも動くがレート制限が 60 req/h になる）
 GITHUB_TOKEN=
-# 未設定なら tech_youtube の収集だけがスキップされる
+# 未設定なら tech_youtube と trend_digest の YouTube 急上昇だけがスキップされる
 YOUTUBE_API_KEY=
+# Google Trends 急上昇ワード（SerpAPI。無料枠 250検索/月、日次1回なら月30回）
+# 未設定なら trend_digest の Google Trends だけがスキップされる
+SERPAPI_API_KEY=
 CONNPASS_API_KEY=your-connpass-api-key-here
 SLACK_CHANNEL_CONNPASS=C0XXXXXXXXX
 CONNPASS_KEYWORDS=AI,機械学習,Python,TypeScript,AWS,クラウド

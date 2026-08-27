@@ -16,7 +16,8 @@ export function sourceRoutes(sources: SourceRepository): Hono {
         key: category.key,
         label: category.label,
         schedule: category.schedule,
-        useScoring: category.useScoring,
+        selector: category.selector ?? 'per_source',
+        maxPerNotification: category.maxPerNotification ?? null,
         sourceCount: category.sources.length,
       })),
     })

@@ -53,6 +53,44 @@
   選外になった記事とカテゴリ設定から外れた情報源の記事は、その場で処理済みにして滞留させない。
 - 日付: 2026-08-21
 
+## ADR-009: 通知量を「頻度」と「1回の件数」の2軸で抑える
+- 決定: `CategoryConfig` に `maxPerNotification` を足し、速報は `tech_cloud` / `tech_ai` のみに絞る
+- 理由: 既存6カテゴリは全件通知（`maxPerSource` のみ）だったため、上限が情報源数に比例して
+  膨らみ、1日あたり最大 400 件・通知15回超になっていた。頻度だけを下げても1回の量が増えるので
+  効かない。カテゴリ全体の件数上限を併用して初めて量が制御できる。
+- 補足: 週次カテゴリは7日分から上位を選ぶため、件数が減ると同時に選抜の質が上がる。
+  選外の記事は既読化するが DB には残るので `GET /articles` から引ける。
+- 日付: 2026-08-27
+
+## ADR-010: 選抜方法を selector で切り替える
+- 決定: `useScoring: boolean` を廃し、`selector: 'per_source' | 'ranking' | 'scoring'` にする
+- 理由: 選抜方法は2択ではなくなった。真偽値のままだと `ranking` を足すたびに条件が増える。
+  また `useScoring` は `selector === 'scoring'` から導出できるので、二重に持つ必要がない。
+- 補足: `ranking` は「情報源内の順位 × 情報源の重み ＋ 複数ソース出現ボーナス」で採点する。
+  ドメインに依存しないため、経済でもウイスキーでも同じ選抜が効く。順位は
+  `articles.source_rank` に保存し、RSS の掲載順・GitHub のリリース順をそのまま使う。
+- 日付: 2026-08-27
+
+## ADR-011: 既存 DB への列追加は ADD_COLUMNS で行う
+- 決定: `db/schema.ts` の `ADD_COLUMNS` を `openDatabase()` が毎回適用する
+- 理由: `CREATE TABLE IF NOT EXISTS` は既存テーブルへ列を足さないため、`source_rank` のような
+  後付けの列が本番 DB に反映されない。マイグレーションツールを入れるほどの規模ではないので、
+  `PRAGMA table_info` で存在を見てから `ALTER TABLE` する最小の仕組みに留める。
+- 補足: 既存行を埋められないため、ここへ足す列は必ず NULL 許容にする。
+- 日付: 2026-08-27
+
+## ADR-012: トレンド発掘を trend_digest カテゴリとして統合する
+- 決定: 旧 `trend-keyword-researcher`（別リポジトリ・Discord 通知）の7情報源を
+  `type: 'ranking'` の情報源として取り込み、`trend_digest` カテゴリにまとめる
+- 理由: 収集・正規化・重複排除・通知・systemd 常駐という骨格が同一で、`http` と
+  `normalizeUrl` を二重に実装していた。器を共通化し、違い（ランキング統合という
+  選抜ロジック）だけを `selector: 'ranking'` として持つ。
+- 補足: 通知先は Discord Webhook から Slack Bot token へ移す。Webhook URL は
+  それ自体が認証情報で scope 制限も監査ログも無く、失効以外の制御手段がない。
+- 補足: 旧実装の「直近14日のアーカイブを読んで再掲抑制」は、
+  `UNIQUE(source_id, external_id)` による恒久的な重複排除へ置き換える。
+- 日付: 2026-08-27
+
 ## 現在のアーキテクチャ
 
 ```text

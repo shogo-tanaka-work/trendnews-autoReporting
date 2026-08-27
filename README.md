@@ -1,7 +1,8 @@
 # trendnews-autoReporting
 
-一次情報（RSS / GitHub Releases / YouTube Data API / Connpass API）を自動収集して SQLite へ蓄積し、
-新着だけを Slack へ Block Kit で通知する Tech Intelligence 基盤。
+一次情報（RSS / GitHub Releases / YouTube Data API / Connpass API）と、世の中のトレンド
+（はてブ / Hacker News / Qiita / Zenn / GitHub 急上昇 / Google Trends）を自動収集して
+SQLite へ蓄積し、新着だけを Slack へ Block Kit で通知する Tech Intelligence 基盤。
 
 - **引き継ぎメモ（ミニ PC 作業はここから）: [docs/引き継ぎメモ.md](docs/引き継ぎメモ.md)**
 - 仕様: [docs/SPEC.md](docs/SPEC.md)
@@ -60,10 +61,9 @@ sudo -u techradar npm ci
 sudo -u techradar npm run build
 sudo install -d -o techradar -g techradar /opt/tech-radar/data
 
-# 2. 秘密情報は systemd の EnvironmentFile へ置く（リポジトリには入れない）
-sudo install -d -m 0750 -o root -g techradar /etc/tech-radar
-sudo install -m 0640 -o root -g techradar /dev/null /etc/tech-radar/environment
-sudo vi /etc/tech-radar/environment   # docs/SPEC.md の「環境変数」を KEY=VALUE 形式で記述
+# 2. 秘密情報はプロジェクトルート直下の environment へ置く（Git 管理外。共有領域へ散らさない）
+sudo install -m 0640 -o root -g techradar /dev/null /opt/tech-radar/environment
+sudo vi /opt/tech-radar/environment   # docs/SPEC.md の「環境変数」を KEY=VALUE 形式で記述
 
 # 3. unit を配置
 npm run gen:systemd
@@ -75,7 +75,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now tech-radar-api.service
 sudo systemctl enable --now tech-radar-connpass.timer
 for c in ai_news engineer_news whiskey_news fitness_news business_news economy_news \
-         tech_cloud tech_web tech_ai tech_youtube; do
+         trend_digest tech_cloud tech_web tech_ai tech_youtube; do
   sudo systemctl enable --now "tech-radar-collect@$c.timer"
 done
 ```
@@ -104,3 +104,8 @@ sqlite3 /opt/tech-radar/data/tech-radar.sqlite \
 - `type: 'rss'` … `url` を指定。Cloudflare のように category が付くフィードは `includeCategories` で絞れる
 - `type: 'github'` … `repo` は `owner/name`。`includePrerelease: true` で prerelease も拾う
 - `type: 'youtube'` … `channelRef` に `UC...` のチャンネル ID か `@handle` を指定する
+- `type: 'ranking'` … `provider` に取得元を指定する（はてブ / Hacker News / Qiita / Zenn /
+  GitHub 急上昇 / YouTube 急上昇 / Google Trends）。`weight` で情報源の信頼度を 0〜1 で表す
+
+通知量はカテゴリ側の `maxPerNotification`（1回の総件数）で決まるので、情報源を足しても
+通知が増えることはない。詳細は [docs/SPEC.md の「通知量の設計」](docs/SPEC.md#通知量の設計)。

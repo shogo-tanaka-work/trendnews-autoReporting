@@ -102,13 +102,15 @@ export class YoutubeCollector implements Collector<YoutubeSourceConfig> {
       throw new Error(`YouTube playlistItems.list のレスポンス形式が想定と異なります (${source.name})`);
     }
 
-    return (parsed.data.items ?? []).map((item) => {
+    return (parsed.data.items ?? []).map((item, index) => {
       const videoId = item.snippet.resourceId.videoId;
 
       return {
         externalId: videoId,
         title: item.snippet.title,
         url: `https://www.youtube.com/watch?v=${videoId}`,
+        // uploads playlist は新着順に返るため、その並びを順位として扱う
+        rank: index + 1,
         description: (item.snippet.description ?? '').slice(0, DESCRIPTION_MAX_CHARS),
         publishedAt: item.snippet.publishedAt,
         author: item.snippet.channelTitle,

@@ -9,6 +9,7 @@ import type { CategoryConfig, SourceConfig } from '../domain/source.js';
 import { logger, toErrorMessage } from '../lib/logger.js';
 import { buildArticleMessages, type ArticleGroup, type NotifiableArticle } from '../notifiers/blocks/articles.js';
 import type { SlackNotifier } from '../notifiers/slack.js';
+import { selectRanking } from './select-ranking.js';
 
 export type CollectedEntry = {
   article: Article;
@@ -39,47 +40,76 @@ function toNotifiable(entry: CollectedEntry, showImportance: boolean): Notifiabl
 }
 
 /**
- * 通知対象の選別。純関数。
+ * 情報源ごとに束ねる選別。純関数。
  *
- * - useScoring のカテゴリは minScore 未満を除外し、スコア降順で並べる
- * - それ以外は現行どおり全件を発行日時の降順で並べる
- * - maxPerSource を超える分は除外する
+ * - selector: 'scoring' のカテゴリは minScore 未満を除外し、スコア降順で並べる
+ * - それ以外は全件を発行日時の降順で並べる
+ * - maxPerSource を超える分と、maxPerNotification に収まらない分は除外する
  */
-export function selectForNotification(category: CategoryConfig, entries: CollectedEntry[]): Selection {
-  const groups: ArticleGroup[] = [];
+export function selectPerSource(category: CategoryConfig, entries: CollectedEntry[]): Selection {
   const excludedIds: number[] = [];
   const maxPerSource = category.maxPerSource ?? Number.MAX_SAFE_INTEGER;
   const minScore = category.minScore ?? Number.NEGATIVE_INFINITY;
+  const useScoring = category.selector === 'scoring';
+
+  const rank = (a: CollectedEntry, b: CollectedEntry): number =>
+    useScoring ? b.ruleScore - a.ruleScore : publishedDesc(a.article, b.article);
+
+  /** 情報源の並び順を保ったまま、情報源ごとの採用分を集める */
+  const perSource: { source: SourceConfig; shown: CollectedEntry[] }[] = [];
 
   for (const source of category.sources) {
     const ofSource = entries.filter((entry) => entry.source.id === source.id);
     if (ofSource.length === 0) continue;
 
-    const kept = category.useScoring
-      ? ofSource.filter((entry) => entry.ruleScore >= minScore)
-      : [...ofSource];
+    const kept = useScoring ? ofSource.filter((entry) => entry.ruleScore >= minScore) : [...ofSource];
 
     for (const entry of ofSource) {
       if (!kept.includes(entry)) excludedIds.push(entry.article.id);
     }
 
-    kept.sort((a, b) =>
-      category.useScoring ? b.ruleScore - a.ruleScore : publishedDesc(a.article, b.article)
-    );
+    kept.sort(rank);
 
     const shown = kept.slice(0, maxPerSource);
     for (const entry of kept.slice(maxPerSource)) excludedIds.push(entry.article.id);
 
-    if (shown.length === 0) continue;
+    if (shown.length > 0) perSource.push({ source, shown });
+  }
+
+  // カテゴリ全体の上限を、情報源をまたいで評価の高い順に適用する。
+  // 情報源ごとの上限だけでは、情報源を増やすたびに通知量が増えてしまう。
+  const limit = category.maxPerNotification ?? Number.MAX_SAFE_INTEGER;
+  const all = perSource.flatMap(({ shown }) => shown);
+  const survivors = new Set([...all].sort(rank).slice(0, limit));
+
+  for (const entry of all) {
+    if (!survivors.has(entry)) excludedIds.push(entry.article.id);
+  }
+
+  const groups: ArticleGroup[] = [];
+
+  for (const { source, shown } of perSource) {
+    const articles = shown.filter((entry) => survivors.has(entry));
+    if (articles.length === 0) continue;
 
     groups.push({
       sourceName: source.name,
       emoji: source.emoji ?? ':newspaper:',
-      articles: shown.map((entry) => toNotifiable(entry, category.useScoring)),
+      articles: articles.map((entry) => toNotifiable(entry, useScoring)),
     });
   }
 
   return { groups, excludedIds };
+}
+
+/**
+ * カテゴリの selector に応じて選別方法を切り替える。
+ * ranking だけ別モジュールなのは、URL の束ね直しという別の関心事だから。
+ */
+export function selectForNotification(category: CategoryConfig, entries: CollectedEntry[]): Selection {
+  return category.selector === 'ranking'
+    ? selectRanking(category, entries)
+    : selectPerSource(category, entries);
 }
 
 export type NotifyDeps = {

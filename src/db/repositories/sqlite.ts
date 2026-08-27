@@ -26,6 +26,7 @@ type ArticleDbRow = {
   categories_json: string;
   notified_at: string | null;
   created_at: string;
+  source_rank: number | null;
   rule_score: number | null;
   importance: string | null;
   llm_reason: string | null;
@@ -49,6 +50,7 @@ function toArticle(row: ArticleDbRow): Article {
     externalId: row.external_id,
     title: row.title,
     url: row.url,
+    rank: row.source_rank,
     description: row.description,
     publishedAt: row.published_at,
     fetchedAt: row.fetched_at,
@@ -93,8 +95,8 @@ class SqliteArticleRepository implements ArticleRepository {
   constructor(private readonly db: Db) {
     this.insertStmt = db.prepare<unknown[], ArticleDbRow>(`
       INSERT INTO articles
-        (source_id, external_id, title, url, description, published_at, fetched_at, categories_json, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (source_id, external_id, title, url, description, published_at, fetched_at, categories_json, created_at, source_rank)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (source_id, external_id) DO NOTHING
       RETURNING *, NULL AS rule_score, NULL AS importance, NULL AS llm_reason,
                 NULL AS should_read_now, NULL AS scored_at
@@ -133,7 +135,8 @@ class SqliteArticleRepository implements ArticleRepository {
           row.publishedAt,
           row.fetchedAt,
           JSON.stringify(row.categories),
-          row.fetchedAt
+          row.fetchedAt,
+          row.rank
         );
 
         if (result) inserted.push(toArticle(result));

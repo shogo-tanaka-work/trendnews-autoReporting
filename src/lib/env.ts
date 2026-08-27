@@ -21,6 +21,7 @@ const EnvSchema = z.object({
   GITHUB_TOKEN: z.string().optional(),
   YOUTUBE_API_KEY: z.string().optional(),
   CONNPASS_API_KEY: z.string().optional(),
+  SERPAPI_API_KEY: z.string().optional(),
   CONNPASS_KEYWORDS: z.string().default(''),
   SLACK_CHANNEL_CONNPASS: z.string().optional(),
 

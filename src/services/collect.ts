@@ -7,6 +7,7 @@
 import { CATEGORIES, findCategory } from '../config/categories.js';
 import { ConnpassCollector } from '../collectors/connpass.js';
 import { GithubReleaseCollector } from '../collectors/github.js';
+import { RankingCollector } from '../collectors/ranking/index.js';
 import { RssCollector } from '../collectors/rss.js';
 import { YoutubeCollector } from '../collectors/youtube.js';
 import type { RawItem } from '../domain/article.js';
@@ -26,6 +27,7 @@ export type CollectDeps = {
   githubToken: string | undefined;
   youtubeApiKey: string | undefined;
   connpassApiKey: string | undefined;
+  serpApiKey: string | undefined;
   /** カテゴリ設定の channelEnvKey から Slack チャンネル ID を解決する */
   channelFor: (envKey: string) => string | undefined;
   now: () => Date;
@@ -65,6 +67,14 @@ function makeFetcher(deps: CollectDeps): (source: SourceConfig) => Promise<RawIt
   const rss = new RssCollector();
   const github = new GithubReleaseCollector(deps.githubToken);
   const youtube = deps.youtubeApiKey ? new YoutubeCollector(deps.youtubeApiKey) : null;
+  const ranking = new RankingCollector(
+    {
+      githubToken: deps.githubToken,
+      youtubeApiKey: deps.youtubeApiKey,
+      serpApiKey: deps.serpApiKey,
+    },
+    deps.now
+  );
 
   return async (source) => {
     switch (source.type) {
@@ -75,6 +85,8 @@ function makeFetcher(deps: CollectDeps): (source: SourceConfig) => Promise<RawIt
       case 'youtube':
         if (!youtube) throw new Error('YOUTUBE_API_KEY が未設定のため YouTube を収集できません');
         return youtube.collect(source);
+      case 'ranking':
+        return ranking.collect(source);
     }
   };
 }

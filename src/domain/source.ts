@@ -8,6 +8,11 @@ type SourceBase = {
   id: string;
   name: string;
   emoji?: string;
+  /**
+   * ランキング選抜での重み（0〜1）。情報源の信頼度・ノイズの少なさを表す。
+   * selector: 'ranking' のカテゴリでのみ使う。未指定は 1（減点しない）。
+   */
+  weight?: number;
 };
 
 export type RssSourceConfig = SourceBase & {
@@ -36,7 +41,41 @@ export type YoutubeSourceConfig = SourceBase & {
   channelRef: string;
 };
 
-export type SourceConfig = RssSourceConfig | GithubSourceConfig | YoutubeSourceConfig;
+/**
+ * ランキング型の情報源。「特定の購読先の新着」ではなく「世の中の上位N件」を取る。
+ * 取得先ごとに API も並び順の意味も違うため、provider で実装を切り替える。
+ */
+export type RankingProvider =
+  | 'hatena'
+  | 'hackernews'
+  | 'qiita'
+  | 'zenn'
+  | 'github_trending'
+  | 'youtube_trending'
+  | 'google_trends';
+
+export type RankingSourceConfig = SourceBase & {
+  type: 'ranking';
+  provider: RankingProvider;
+  /** 取り込む上位件数。未指定は provider ごとの既定値 */
+  limit?: number;
+};
+
+export type SourceConfig =
+  | RssSourceConfig
+  | GithubSourceConfig
+  | YoutubeSourceConfig
+  | RankingSourceConfig;
+
+/**
+ * 通知対象の選び方。
+ *
+ * - 'per_source': 情報源ごとに束ねて全件を出す。取りこぼしを許さない用途向け。
+ * - 'ranking':    情報源内の順位と重みで採点し、カテゴリ全体の上位だけを出す。
+ *                 同じ URL が複数の情報源に現れたら加点して束ねる。
+ * - 'scoring':    キーワード配点（config/scoring.ts）で minScore 未満を捨てる。
+ */
+export type SelectorKind = 'per_source' | 'ranking' | 'scoring';
 
 export type CategoryConfig = {
   key: string;
@@ -45,19 +84,22 @@ export type CategoryConfig = {
   channelEnvKey: string;
   /** systemd timer の OnCalendar 式（Asia/Tokyo） */
   schedule: string;
-  /**
-   * ルールベーススコアで絞り込むか。
-   * 技術系カテゴリのみ true。既存カテゴリは全件通知のまま。
-   */
-  useScoring: boolean;
-  /** useScoring 時、この点数未満の記事は通知しない */
+  /** 未指定は 'per_source'（従来の挙動） */
+  selector?: SelectorKind;
+  /** selector: 'scoring' のとき、この点数未満の記事は通知しない */
   minScore?: number;
-  /** 1ソースあたりの通知上限 */
+  /**
+   * 1回の通知に載せる総件数の上限。
+   * maxPerSource だけでは情報源を増やすたびに通知量が増えてしまうため、
+   * カテゴリ全体の上限をここで押さえる。
+   */
+  maxPerNotification?: number;
+  /** 1情報源あたりの通知上限 */
   maxPerSource?: number;
   sources: SourceConfig[];
 };
 
-export function sourceUrlOf(source: SourceConfig): string {
+export function sourceUrlOf(source: SourceConfig): string | null {
   switch (source.type) {
     case 'rss':
       return source.url;
@@ -67,6 +109,9 @@ export function sourceUrlOf(source: SourceConfig): string {
       return source.channelRef.startsWith('@')
         ? `https://www.youtube.com/${source.channelRef}`
         : `https://www.youtube.com/channel/${source.channelRef}`;
+    case 'ranking':
+      // ランキングは単一の購読 URL を持たない（provider が複数の口を叩くこともある）
+      return null;
   }
 }
 

@@ -60,6 +60,7 @@ describe('toNewArticle', () => {
     expect(article).toEqual({
       sourceId: 'aws-whats-new',
       externalId: 'guid-1',
+      rank: null,
       title: 'New feature',
       url: 'https://aws.amazon.com/x',
       description: 'desc',

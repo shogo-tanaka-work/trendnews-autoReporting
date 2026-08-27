@@ -3,7 +3,7 @@
  * Node.js / SQLite / Hono のいずれにも依存しないこと。
  */
 
-export type SourceType = 'rss' | 'github' | 'youtube' | 'api';
+export type SourceType = 'rss' | 'github' | 'youtube' | 'ranking' | 'api';
 
 export type Importance = 'A' | 'B' | 'C';
 
@@ -12,6 +12,8 @@ export type RawItem = {
   externalId: string;
   title: string;
   url: string;
+  /** 情報源内での掲載順（1 始まり）。順位の概念を持たない情報源では省略する */
+  rank?: number | undefined;
   description?: string | undefined;
   publishedAt?: string | undefined;
   author?: string | undefined;
@@ -24,6 +26,7 @@ export type NewArticle = {
   externalId: string;
   title: string;
   url: string;
+  rank: number | null;
   description: string | null;
   publishedAt: string | null;
   fetchedAt: string;

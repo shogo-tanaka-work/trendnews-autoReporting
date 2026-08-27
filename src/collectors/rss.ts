@@ -60,6 +60,8 @@ export class RssCollector implements Collector<RssSourceConfig> {
         externalId: toPlainString(item.guid) ?? url,
         title: item.title ?? '(タイトルなし)',
         url,
+        // フィードの掲載順をそのまま順位として扱う（多くのフィードは新着・人気順で並ぶ）
+        rank: items.length + 1,
         description: item.contentSnippet ?? item.content ?? item.summary,
         publishedAt: item.isoDate ?? item.pubDate,
         author: item.creator,
