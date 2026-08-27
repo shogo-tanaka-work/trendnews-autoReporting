@@ -76,6 +76,7 @@ export function toNewArticle(sourceId: string, item: RawItem, fetchedAt: string)
     externalId,
     title,
     url,
+    rank: typeof item.rank === 'number' && Number.isFinite(item.rank) ? item.rank : null,
     description,
     publishedAt: toIsoDate(item.publishedAt),
     fetchedAt,

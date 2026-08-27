@@ -7,16 +7,20 @@
 import { CATEGORIES, findCategory } from '../config/categories.js';
 import { ConnpassCollector } from '../collectors/connpass.js';
 import { GithubReleaseCollector } from '../collectors/github.js';
+import { RankingCollector } from '../collectors/ranking/index.js';
 import { RssCollector } from '../collectors/rss.js';
 import { YoutubeCollector } from '../collectors/youtube.js';
 import type { RawItem } from '../domain/article.js';
 import type { CategoryConfig, SourceConfig } from '../domain/source.js';
 import { sourceUrlOf } from '../domain/source.js';
 import type { Repositories, SourceRow } from '../db/repositories/types.js';
+import { saveDigest, tokyoDate } from '../lib/archive.js';
 import { logger, toErrorMessage } from '../lib/logger.js';
 import type { SlackNotifier } from '../notifiers/slack.js';
+import type { NotifiableArticle } from '../notifiers/blocks/articles.js';
 import { buildConnpassMessage } from '../notifiers/blocks/connpass.js';
 import { dedupeByExternalId, toNewArticle } from './normalize.js';
+import { renderDigest } from './digest.js';
 import { notifyArticles, type CollectedEntry } from './notify.js';
 import { scoreArticle } from './score.js';
 
@@ -26,8 +30,11 @@ export type CollectDeps = {
   githubToken: string | undefined;
   youtubeApiKey: string | undefined;
   connpassApiKey: string | undefined;
+  serpApiKey: string | undefined;
   /** カテゴリ設定の channelEnvKey から Slack チャンネル ID を解決する */
   channelFor: (envKey: string) => string | undefined;
+  /** 昇格台帳の出力先。省略するとリポジトリ直下の archive/ を使う */
+  archiveDir?: string;
   now: () => Date;
 };
 
@@ -65,6 +72,14 @@ function makeFetcher(deps: CollectDeps): (source: SourceConfig) => Promise<RawIt
   const rss = new RssCollector();
   const github = new GithubReleaseCollector(deps.githubToken);
   const youtube = deps.youtubeApiKey ? new YoutubeCollector(deps.youtubeApiKey) : null;
+  const ranking = new RankingCollector(
+    {
+      githubToken: deps.githubToken,
+      youtubeApiKey: deps.youtubeApiKey,
+      serpApiKey: deps.serpApiKey,
+    },
+    deps.now
+  );
 
   return async (source) => {
     switch (source.type) {
@@ -75,6 +90,8 @@ function makeFetcher(deps: CollectDeps): (source: SourceConfig) => Promise<RawIt
       case 'youtube':
         if (!youtube) throw new Error('YOUTUBE_API_KEY が未設定のため YouTube を収集できません');
         return youtube.collect(source);
+      case 'ranking':
+        return ranking.collect(source);
     }
   };
 }
@@ -158,6 +175,33 @@ async function buildPendingEntries(
   return { entries, orphanIds };
 }
 
+const DEFAULT_ARCHIVE_DIR = 'archive';
+
+/**
+ * 昇格台帳を書き出す。
+ * 失敗しても収集と通知は成立しているので、縮退させて収集自体は成功のままにする。
+ */
+async function writeDigest(
+  deps: CollectDeps,
+  category: CategoryConfig,
+  articles: NotifiableArticle[],
+  stats: { fetched: number; newCount: number }
+): Promise<void> {
+  const date = tokyoDate(deps.now());
+
+  try {
+    const markdown = renderDigest({ date, label: category.label, articles, stats });
+    const path = await saveDigest(deps.archiveDir ?? DEFAULT_ARCHIVE_DIR, date, markdown);
+
+    logger.info('昇格台帳を書き出しました', { job: `collect:${category.key}`, path });
+  } catch (err) {
+    logger.error('昇格台帳の書き出しに失敗しました', {
+      job: `collect:${category.key}`,
+      error: toErrorMessage(err),
+    });
+  }
+}
+
 export async function collectCategory(deps: CollectDeps, category: CategoryConfig): Promise<CategorySummary> {
   const startedAt = deps.now();
   const fetchedAt = startedAt.toISOString();
@@ -233,6 +277,12 @@ export async function collectCategory(deps: CollectDeps, category: CategoryConfi
       entries
     );
     notifiedCount = result.notifiedCount;
+
+    // 台帳は通知できた分だけ残す。送信前に書くと、失敗して再送された回で
+    // 同じ日の台帳を二度書くことになる
+    if (category.archiveDigest && result.notified.length > 0) {
+      await writeDigest(deps, category, result.notified, { fetched, newCount });
+    }
   }
 
   const finishedAt = deps.now();

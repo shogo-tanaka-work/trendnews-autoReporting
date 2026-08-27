@@ -11,6 +11,7 @@ function article(id: number, title: string, publishedAt: string): Article {
     title,
     url: `https://example.com/${id}`,
     description: null,
+    rank: null,
     publishedAt,
     fetchedAt: '2026-08-21T00:00:00.000Z',
     categories: [],
@@ -33,7 +34,7 @@ const scoringCategory: CategoryConfig = {
   label: 'Cloud',
   channelEnvKey: 'SLACK_CHANNEL_TECH_CLOUD',
   schedule: '*-*-* 09:00:00',
-  useScoring: true,
+  selector: 'scoring',
   minScore: 4,
   maxPerSource: 2,
   sources: [{ id: 'src-a', type: 'rss', name: 'Source A', url: 'https://example.com/feed', emoji: ':a:' }],
@@ -53,7 +54,7 @@ describe('selectForNotification', () => {
   });
 
   it('スコアリングしないカテゴリは発行日時の降順で全件残す', () => {
-    const category: CategoryConfig = { ...scoringCategory, useScoring: false, maxPerSource: 5 };
+    const category: CategoryConfig = { ...scoringCategory, selector: 'per_source', maxPerSource: 5 };
 
     const { groups, excludedIds } = selectForNotification(category, [
       entry(1, 0, '2026-08-19T00:00:00.000Z'),
@@ -65,8 +66,26 @@ describe('selectForNotification', () => {
     expect(excludedIds).toEqual([]);
   });
 
+  it('maxPerNotification でカテゴリ全体の件数を抑える', () => {
+    const category: CategoryConfig = {
+      ...scoringCategory,
+      selector: 'per_source',
+      maxPerSource: 5,
+      maxPerNotification: 2,
+    };
+
+    const { groups, excludedIds } = selectForNotification(category, [
+      entry(1, 0, '2026-08-19T00:00:00.000Z'),
+      entry(2, 0, '2026-08-21T00:00:00.000Z'),
+      entry(3, 0, '2026-08-20T00:00:00.000Z'),
+    ]);
+
+    expect(groups[0]?.articles.map((a) => a.id)).toEqual([2, 3]);
+    expect(excludedIds).toEqual([1]);
+  });
+
   it('スコアリングしないカテゴリでは importance バッジを付けない', () => {
-    const category: CategoryConfig = { ...scoringCategory, useScoring: false };
+    const category: CategoryConfig = { ...scoringCategory, selector: 'per_source' };
     const { groups } = selectForNotification(category, [entry(1, 10)]);
 
     expect(groups[0]?.articles[0]?.importance).toBeNull();

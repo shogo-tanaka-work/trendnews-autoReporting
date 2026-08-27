@@ -4,17 +4,24 @@
  * schedule は systemd timer の OnCalendar 式（Asia/Tokyo）。
  * `npm run gen:systemd` がここから unit の drop-in を生成する。
  * SQLite の書き込みが重ならないよう、カテゴリごとに時刻をずらしている。
+ *
+ * 通知量は「頻度（schedule）」と「1回の件数（maxPerNotification）」の
+ * 両方で決まる。情報源を足すときに触るのは sources だけでよい。
  */
 import type { CategoryConfig, SourceConfig } from '../domain/source.js';
 
 export const CATEGORIES: CategoryConfig[] = [
-  // ── 既存カテゴリ（現行の通知内容を維持する） ─────────────────────────
+  // ── 日次・週次ダイジェスト（ランキング選抜で上位だけを通知する） ──────
+  //
+  // 情報源を増やしても通知量が増えないよう、maxPerNotification で
+  // カテゴリ全体の件数を押さえる。選外の記事は API から参照できる。
   {
     key: 'ai_news',
     label: 'AIニュース速報',
     channelEnvKey: 'SLACK_CHANNEL_AI_NEWS',
-    schedule: '*-*-* 08,20:00:00',
-    useScoring: false,
+    schedule: '*-*-* 08:00:00',
+    selector: 'ranking',
+    maxPerNotification: 10,
     maxPerSource: 5,
     sources: [
       // AI企業公式
@@ -32,8 +39,9 @@ export const CATEGORIES: CategoryConfig[] = [
     key: 'engineer_news',
     label: 'エンジニアニュース速報',
     channelEnvKey: 'SLACK_CHANNEL_ENGINEER_NEWS',
-    schedule: '*-*-* 08,20:10:00',
-    useScoring: false,
+    schedule: '*-*-* 08:10:00',
+    selector: 'ranking',
+    maxPerNotification: 10,
     maxPerSource: 5,
     sources: [
       // 国内IT総合
@@ -53,8 +61,9 @@ export const CATEGORIES: CategoryConfig[] = [
     key: 'whiskey_news',
     label: 'ウイスキーニュース',
     channelEnvKey: 'SLACK_CHANNEL_WHISKEY_NEWS',
-    schedule: '*-*-* 22:00:00',
-    useScoring: false,
+    schedule: 'Sat *-*-* 10:00:00',
+    selector: 'ranking',
+    maxPerNotification: 10,
     maxPerSource: 5,
     sources: [
       { id: 'barrel', type: 'rss', name: 'BARREL', url: 'https://www.barrel365.com/feed/', emoji: ':tumbler_glass:' },
@@ -66,8 +75,9 @@ export const CATEGORIES: CategoryConfig[] = [
     key: 'fitness_news',
     label: '筋トレニュース',
     channelEnvKey: 'SLACK_CHANNEL_FITNESS_NEWS',
-    schedule: '*-*-* 17:00:00',
-    useScoring: false,
+    schedule: 'Sun *-*-* 10:00:00',
+    selector: 'ranking',
+    maxPerNotification: 10,
     maxPerSource: 5,
     sources: [
       { id: 'breaking-muscle', type: 'rss', name: 'Breaking Muscle', url: 'https://breakingmuscle.com/feed/', emoji: ':muscle:' },
@@ -79,8 +89,9 @@ export const CATEGORIES: CategoryConfig[] = [
     key: 'business_news',
     label: 'ビジネスニュース',
     channelEnvKey: 'SLACK_CHANNEL_BUSINESS_NEWS',
-    schedule: '*-*-* 08:30:00',
-    useScoring: false,
+    schedule: 'Sat *-*-* 09:00:00',
+    selector: 'ranking',
+    maxPerNotification: 10,
     maxPerSource: 5,
     sources: [
       // 会社員へ戻ったため、フリーランス・個人事業主向けの情報源は 2026-08-21 に整理した
@@ -94,8 +105,9 @@ export const CATEGORIES: CategoryConfig[] = [
     key: 'economy_news',
     label: '経済ニュース',
     channelEnvKey: 'SLACK_CHANNEL_ECONOMY_NEWS',
-    schedule: '*-*-* 08,20:20:00',
-    useScoring: false,
+    schedule: '*-*-* 07:30:00',
+    selector: 'ranking',
+    maxPerNotification: 8,
     maxPerSource: 5,
     sources: [
       // 国内経済・総合
@@ -111,14 +123,44 @@ export const CATEGORIES: CategoryConfig[] = [
     ],
   },
 
-  // ── Tech Intelligence（一次情報。ルールベーススコアで絞り込む） ────────
+  // ── トレンド発掘（世の中のランキング上位から発信ネタを拾う） ──────────
+  //
+  // 既存カテゴリが「決めた購読先の新着を見逃さない」のに対し、ここは
+  // 「まだ知らない話題を上位N件だけ拾う」。目的が違うので情報源も選抜も別に持つ。
+  // 重み付けは情報源の信頼度とノイズの少なさを表す（1.0 が基準）。
+  {
+    key: 'trend_digest',
+    label: 'トレンドダイジェスト',
+    channelEnvKey: 'SLACK_CHANNEL_TREND_DIGEST',
+    schedule: '*-*-* 07:15:00',
+    selector: 'ranking',
+    maxPerNotification: 15,
+    maxPerSource: 5,
+    // 4本柱に当たらない「世間の話題」も少しは拾うが、主役にはしない
+    pillars: { untaggedSlots: 3 },
+    archiveDigest: true,
+    sources: [
+      { id: 'trend-hatena', type: 'ranking', provider: 'hatena', name: 'はてブ', weight: 1.0, emoji: ':bookmark:' },
+      { id: 'trend-hackernews', type: 'ranking', provider: 'hackernews', name: 'Hacker News', weight: 0.9, emoji: ':orange_book:' },
+      { id: 'trend-google-trends', type: 'ranking', provider: 'google_trends', name: 'Google Trends', weight: 0.9, emoji: ':mag:' },
+      { id: 'trend-qiita', type: 'ranking', provider: 'qiita', name: 'Qiita', weight: 0.8, emoji: ':green_book:' },
+      { id: 'trend-zenn', type: 'ranking', provider: 'zenn', name: 'Zenn', weight: 0.8, emoji: ':closed_book:' },
+      { id: 'trend-github', type: 'ranking', provider: 'github_trending', name: 'GitHub 急上昇', weight: 0.7, emoji: ':octopus:' },
+      { id: 'trend-youtube', type: 'ranking', provider: 'youtube_trending', name: 'YouTube 急上昇', weight: 0.6, emoji: ':tv:' },
+    ],
+  },
+
+  // ── Tech Intelligence（一次情報。キーワード配点で絞り込む） ────────────
+  //
+  // 実装判断に直結し翌朝まで待てないため、この2カテゴリだけ1日2回の速報とする。
   {
     key: 'tech_cloud',
     label: 'Cloud / Infra アップデート',
     channelEnvKey: 'SLACK_CHANNEL_TECH_CLOUD',
     schedule: '*-*-* 08,20:40:00',
-    useScoring: true,
-    minScore: 4,
+    selector: 'scoring',
+    minScore: 6,
+    maxPerNotification: 8,
     maxPerSource: 8,
     sources: [
       { id: 'aws-whats-new', type: 'rss', name: "AWS What's New", url: 'https://aws.amazon.com/about-aws/whats-new/recent/feed/', emoji: ':aws:' },
@@ -132,8 +174,9 @@ export const CATEGORIES: CategoryConfig[] = [
     label: 'Web / JavaScript リリース',
     channelEnvKey: 'SLACK_CHANNEL_TECH_WEB',
     schedule: '*-*-* 09:10:00',
-    useScoring: true,
+    selector: 'scoring',
     minScore: 3,
+    maxPerNotification: 8,
     maxPerSource: 3,
     sources: [
       { id: 'gh-react', type: 'github', name: 'React', repo: 'facebook/react', emoji: ':atom_symbol:' },
@@ -152,8 +195,9 @@ export const CATEGORIES: CategoryConfig[] = [
     label: 'AI / AI Agent アップデート',
     channelEnvKey: 'SLACK_CHANNEL_TECH_AI',
     schedule: '*-*-* 08,20:50:00',
-    useScoring: true,
-    minScore: 3,
+    selector: 'scoring',
+    minScore: 5,
+    maxPerNotification: 8,
     maxPerSource: 3,
     sources: [
       { id: 'gh-langgraph', type: 'github', name: 'LangGraph', repo: 'langchain-ai/langgraph', emoji: ':spider_web:' },
@@ -172,7 +216,8 @@ export const CATEGORIES: CategoryConfig[] = [
     label: '技術系 YouTube 新着',
     channelEnvKey: 'SLACK_CHANNEL_TECH_YOUTUBE',
     schedule: '*-*-* 10:00:00',
-    useScoring: false,
+    selector: 'ranking',
+    maxPerNotification: 5,
     maxPerSource: 3,
     sources: [
       // channelRef は `UC...` のチャンネル ID か `@handle`。handle は API 側で ID へ解決する。

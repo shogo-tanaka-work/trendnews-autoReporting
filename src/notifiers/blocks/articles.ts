@@ -19,10 +19,23 @@ export type NotifiableArticle = {
   url: string;
   publishedAt: string | null;
   importance: Importance | null;
+  /**
+   * 記事ごとに出典を示したいときに使う（ランキング型）。
+   * 情報源ごとに見出しを立てる per_source では不要なので省略する。
+   */
+  sourceNames?: string[];
+  emoji?: string;
+  /** 発信4本柱のタグ。付いていれば context 行へ出す */
+  tags?: string[];
+  /** ランキング選抜のスコア（0〜1）。ダイジェストの並び順の根拠として残す */
+  score?: number;
+  /** 注目度と分類（"1,234 users ｜ テクノロジー"）。ダイジェストで出典の補足に使う */
+  detail?: string | null;
 };
 
 export type ArticleGroup = {
-  sourceName: string;
+  /** 省略すると情報源の見出しを出さない。順位が主役のランキング型で使う */
+  sourceName?: string;
   emoji: string;
   articles: NotifiableArticle[];
 };
@@ -36,6 +49,22 @@ export type SlackMessage = {
 function linkedTitle(article: NotifiableArticle): string {
   const badge = article.importance ? `${IMPORTANCE_EMOJI[article.importance]} ` : '';
   return `${badge}*<${article.url}|${article.title}>*`;
+}
+
+/** 日時と、あれば出典を1行にまとめる */
+function contextText(article: NotifiableArticle): string {
+  const parts = [`:calendar: ${formatJst(article.publishedAt)}`];
+
+  if (article.sourceNames && article.sourceNames.length > 0) {
+    const emoji = article.emoji ? `${article.emoji} ` : '';
+    parts.push(`${emoji}${article.sourceNames.join(' + ')}`);
+  }
+
+  if (article.tags && article.tags.length > 0) {
+    parts.push(`\`${article.tags.join('/')}\``);
+  }
+
+  return parts.join('　|　');
 }
 
 function articleBlocks(article: NotifiableArticle): KnownBlock[] {
@@ -52,18 +81,25 @@ function articleBlocks(article: NotifiableArticle): KnownBlock[] {
     },
     {
       type: 'context',
-      elements: [{ type: 'mrkdwn', text: `:calendar: ${formatJst(article.publishedAt)}` }],
+      elements: [{ type: 'mrkdwn', text: contextText(article) }],
     },
   ];
 }
 
-function groupBlocks(group: ArticleGroup): KnownBlock[] {
-  const header: KnownBlock = {
+function groupHeader(group: ArticleGroup): KnownBlock | null {
+  if (group.sourceName === undefined) return null;
+
+  return {
     type: 'section',
     text: { type: 'mrkdwn', text: `${group.emoji} *${group.sourceName}*  _(${group.articles.length}件)_` },
   };
+}
 
-  return [header, ...group.articles.flatMap(articleBlocks)];
+function groupBlocks(group: ArticleGroup): KnownBlock[] {
+  const header = groupHeader(group);
+  const body = group.articles.flatMap(articleBlocks);
+
+  return header ? [header, ...body] : body;
 }
 
 function headerBlocks(label: string, totalCount: number, now: Date): KnownBlock[] {
@@ -116,14 +152,17 @@ export function buildArticleMessages(label: string, groups: ArticleGroup[], now:
 
     // グループ単位で入りきらない場合は記事単位で詰める
     if (candidate.length > MAX_BLOCKS_PER_MESSAGE) {
-      let chunk: KnownBlock[] = [candidate[0] as KnownBlock];
+      // 見出しがあるグループは、分割後の各メッセージにも同じ見出しを付ける
+      const header = groupHeader(group);
+      const newChunk = (): KnownBlock[] => (header ? [header] : []);
+      let chunk = newChunk();
 
       for (const article of group.articles) {
         const pair = articleBlocks(article);
         if (blocks.length + chunk.length + pair.length > MAX_BLOCKS_PER_MESSAGE) {
           blocks.push(...chunk);
           flush();
-          chunk = [candidate[0] as KnownBlock];
+          chunk = newChunk();
         }
         chunk.push(...pair);
         articleIds.push(article.id);

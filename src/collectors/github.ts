@@ -56,7 +56,7 @@ export class GithubReleaseCollector implements Collector<GithubSourceConfig> {
     return parsed.data
       .filter((release) => !release.draft)
       .filter((release) => source.includePrerelease === true || !release.prerelease)
-      .map((release) => {
+      .map((release, index) => {
         const label = release.name && release.name.length > 0 ? release.name : release.tag_name;
         const prefix = release.prerelease ? '[pre] ' : '';
 
@@ -64,6 +64,8 @@ export class GithubReleaseCollector implements Collector<GithubSourceConfig> {
           externalId: String(release.id),
           title: `${prefix}${source.name} ${label}`,
           url: release.html_url,
+          // API は新しいリリース順に返すため、その並びを順位として扱う
+          rank: index + 1,
           description: (release.body ?? '').slice(0, BODY_MAX_CHARS),
           publishedAt: release.published_at ?? release.created_at ?? undefined,
           author: release.author?.login,

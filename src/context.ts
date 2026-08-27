@@ -31,6 +31,7 @@ export function createContext(): AppContext {
     githubToken: env.GITHUB_TOKEN,
     youtubeApiKey: env.YOUTUBE_API_KEY,
     connpassApiKey: env.CONNPASS_API_KEY,
+    serpApiKey: env.SERPAPI_API_KEY,
     channelFor: slackChannelFor,
     now: () => new Date(),
   };
