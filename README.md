@@ -36,6 +36,8 @@ Slack チャンネルが未設定のカテゴリは、収集だけ行って通�
 
 ## API
 
+listen 先は `API_HOST` / `API_PORT` で決まる（既定は `127.0.0.1:3000`）。他のアプリとポートが競合する場合はここを変える。
+
 ```bash
 curl http://127.0.0.1:3000/health
 curl 'http://127.0.0.1:3000/articles?category=tech_web&limit=10'
@@ -52,35 +54,34 @@ curl -X POST http://127.0.0.1:3000/admin/collect \
 
 ## Ubuntu ミニ PC へのデプロイ
 
+このリポジトリを**置いた場所のまま** systemd から動かす。コードも秘密値も複製しないので、
+更新は `git pull` のあとにスクリプトを実行し直すだけでよい。
+
 ```bash
-# 1. 配置
-sudo useradd --system --home /opt/tech-radar --shell /usr/sbin/nologin techradar
-sudo git clone <repo> /opt/tech-radar
-cd /opt/tech-radar
-sudo -u techradar npm ci
-sudo -u techradar npm run build
-sudo install -d -o techradar -g techradar /opt/tech-radar/data
-
-# 2. 秘密情報はプロジェクトルート直下の environment へ置く（Git 管理外。共有領域へ散らさない）
-sudo install -m 0640 -o root -g techradar /dev/null /opt/tech-radar/environment
-sudo vi /opt/tech-radar/environment   # docs/SPEC.md の「環境変数」を KEY=VALUE 形式で記述
-
-# 3. unit を配置
-npm run gen:systemd
-sudo cp systemd/*.service systemd/*.timer /etc/systemd/system/
-sudo cp -r systemd/generated/* /etc/systemd/system/
-# trend_digest は台帳の commit / push を行うため専用の drop-in が要る
-sudo cp -r 'systemd/tech-radar-collect@trend_digest.service.d' /etc/systemd/system/
-sudo systemctl daemon-reload
-
-# 4. API と収集タイマーを有効化
-sudo systemctl enable --now tech-radar-api.service
-sudo systemctl enable --now tech-radar-connpass.timer
-for c in ai_news engineer_news whiskey_news fitness_news business_news economy_news \
-         trend_digest tech_cloud tech_web tech_ai tech_youtube; do
-  sudo systemctl enable --now "tech-radar-collect@$c.timer"
-done
+sudo bash scripts/deploy-minipc.sh
 ```
+
+`scripts/deploy-minipc.sh` がやること:
+
+1. unit の `User=` / `WorkingDirectory=` / `ExecStart=` の node が、実体と一致するかを先に検査する
+   （ずれていると配置は通るのに起動だけが `203/EXEC` などで失敗する）
+2. `better-sqlite3` が unit の node で読み込めるか確かめ、駄目なら `npm rebuild` する
+   （native module なので、開発と実行で node の ABI が違うと実行時にだけ落ちる）
+3. `npm run build` と `npm run gen:systemd`
+4. **unit 本体（`*.service` / `*.timer`）と drop-in の両方**を `/etc/systemd/system/` へ置く。
+   `generated/` は drop-in だけなので、これだけでは `Unit ... not found` になる
+5. 全カテゴリの `tech-radar-collect@<category>.timer` と `tech-radar-connpass.timer` を有効化する。
+   環境変数が揃っていなければ API は `enable` だけして起動しない
+
+### 前提
+
+- **Node.js 20 以上**。`systemd/*.service` の `ExecStart` が絶対パスで node を指しているので、
+  node を入れ替えたらここも直す（nvm でバージョンを上げたときが該当する）。
+- **秘密値はリポジトリ直下の dotenv ファイル**に置く。`src/lib/env.ts` がこれを読むため、
+  `npm run collect` などの手動実行と systemd 実行で同じ設定になる。
+  systemd の `EnvironmentFile=` は二重管理になるので使わない。
+- サービスは**リポジトリの所有ユーザー**として動く。`ProtectSystem=strict` を掛けているので、
+  書き込み先は unit の `ReadWritePaths=`（`data/`、trend_digest のみ `archive/` と `.git/`）だけ。
 
 ### 運用確認
 
@@ -88,12 +89,12 @@ done
 systemctl list-timers 'tech-radar-*'
 journalctl -u tech-radar-collect@tech_cloud --since today
 systemctl start tech-radar-collect@tech_cloud   # 手動で1回走らせる
-sqlite3 /opt/tech-radar/data/tech-radar.sqlite \
+sqlite3 data/tech-radar.sqlite \
   'SELECT job_name, status, new_count, error_message FROM job_runs ORDER BY id DESC LIMIT 10;'
 ```
 
 スケジュールの正本は `src/config/categories.ts` の `schedule`。変更したら
-`npm run gen:systemd` → drop-in を再配置 → `systemctl daemon-reload` を行う。
+`sudo bash scripts/deploy-minipc.sh` を実行し直す（`npm run gen:systemd` の出力にも手順が出る）。
 
 ## 昇格の運用（trend_digest）
 
@@ -114,7 +115,8 @@ sqlite3 /opt/tech-radar/data/tech-radar.sqlite \
 送信前に書くと同じ日の台帳を二度書くことになる。
 
 `archive/` を push し返すので、ミニ PC の SSH 鍵に**書き込み権限**が要る
-（deploy key なら Allow write access）。
+（deploy key なら Allow write access）。サービスはリポジトリの所有ユーザーとして動くので、
+普段 `git push` に使っている鍵がそのまま使われる。
 
 ## 情報源を足す
 

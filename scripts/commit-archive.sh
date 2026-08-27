@@ -6,7 +6,7 @@
 # 触るパスが src/ と archive/ に分かれるので衝突しない。
 set -euo pipefail
 
-REPO_DIR="${TECH_RADAR_REPO_DIR:-/opt/tech-radar}"
+REPO_DIR="${TECH_RADAR_REPO_DIR:-/home/shogo/apps/trendnews-autoReporting}"
 cd "$REPO_DIR"
 
 if [[ -z "$(git status --porcelain archive)" ]]; then
