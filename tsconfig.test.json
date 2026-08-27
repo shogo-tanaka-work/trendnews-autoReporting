@@ -2,6 +2,8 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
+    // 型検査だけなので出力先の制約は不要。scripts/ と tests/ も対象に含める。
+    "rootDir": ".",
     "types": ["node", "vitest/globals"]
   },
   "include": ["src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts"]
