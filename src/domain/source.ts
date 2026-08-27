@@ -96,6 +96,17 @@ export type CategoryConfig = {
   maxPerNotification?: number;
   /** 1情報源あたりの通知上限 */
   maxPerSource?: number;
+  /**
+   * 発信4本柱（config/pillars.ts）でタグ付けし、どれにも当たらない項目の枠を絞る。
+   * スコア一本で並べると、点数は高いが発信に繋がらない一般ニュースが上位を占めるため。
+   * selector: 'ranking' のときだけ効く。
+   */
+  pillars?: { untaggedSlots: number };
+  /**
+   * 通知した内容を archive/ へ Markdown で書き出すか。
+   * 人が読み返して picks/ へ昇格させるための台帳。
+   */
+  archiveDigest?: boolean;
   sources: SourceConfig[];
 };
 

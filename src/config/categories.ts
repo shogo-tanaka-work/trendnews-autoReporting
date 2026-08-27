@@ -136,6 +136,9 @@ export const CATEGORIES: CategoryConfig[] = [
     selector: 'ranking',
     maxPerNotification: 15,
     maxPerSource: 5,
+    // 4本柱に当たらない「世間の話題」も少しは拾うが、主役にはしない
+    pillars: { untaggedSlots: 3 },
+    archiveDigest: true,
     sources: [
       { id: 'trend-hatena', type: 'ranking', provider: 'hatena', name: 'はてブ', weight: 1.0, emoji: ':bookmark:' },
       { id: 'trend-hackernews', type: 'ranking', provider: 'hackernews', name: 'Hacker News', weight: 0.9, emoji: ':orange_book:' },

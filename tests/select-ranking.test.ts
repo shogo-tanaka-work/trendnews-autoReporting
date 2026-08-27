@@ -158,3 +158,57 @@ describe('selectRanking', () => {
     expect(selectRanking(category(), [])).toEqual({ groups: [], excludedIds: [] });
   });
 });
+
+describe('selectRanking（4本柱の枠割り当て）', () => {
+  /** タイトルで柱に当たる／当たらないを作り分ける */
+  function titled(id: number, sourceId: string, rank: number, title: string): CollectedEntry {
+    const base = entry(id, sourceId, rank, `https://example.com/p/${id}`);
+    return { ...base, article: { ...base.article, title } };
+  }
+
+  const withPillars = category({ maxPerNotification: 4, pillars: { untaggedSlots: 1 } });
+
+  it('4本柱に当たったものを優先し、無タグは枠の上限まで', () => {
+    const { groups } = selectRanking(withPillars, [
+      titled(1, 'a', 1, 'ウイスキーの熟成年数'),
+      titled(2, 'a', 2, '雑談スレッド'),
+      titled(3, 'a', 3, 'Claude で自動化する'),
+      titled(4, 'a', 4, 'LLM エージェント入門'),
+      titled(5, 'a', 5, 'エンジニア採用の評価制度'),
+    ]);
+
+    const ids = groups[0]?.articles.map((a) => a.id) ?? [];
+    // 無タグ（1, 2）は上位2件だが、枠は1つしか割かれない
+    expect(ids).toHaveLength(4);
+    expect(ids.filter((id) => id === 1 || id === 2)).toHaveLength(1);
+    expect(ids).toContain(3);
+    expect(ids).toContain(4);
+    expect(ids).toContain(5);
+  });
+
+  it('タグを NotifiableArticle へ載せる', () => {
+    const { groups } = selectRanking(withPillars, [titled(1, 'a', 1, 'Claude で業務を自動化する')]);
+
+    expect(groups[0]?.articles[0]?.tags).toEqual(['AIエンジニアリング', '業務']);
+  });
+
+  it('pillars 未設定のカテゴリではタグ付けしない', () => {
+    const { groups } = selectRanking(category(), [titled(1, 'a', 1, 'Claude の話')]);
+
+    expect(groups[0]?.articles[0]?.tags).toEqual([]);
+  });
+
+  it('タグ付きだけで枠が埋まるなら無タグは載せない', () => {
+    const { groups, excludedIds } = selectRanking(
+      category({ maxPerNotification: 2, pillars: { untaggedSlots: 3 } }),
+      [
+        titled(1, 'a', 1, 'Claude の話'),
+        titled(2, 'a', 2, 'LLM の話'),
+        titled(3, 'a', 3, '雑談'),
+      ]
+    );
+
+    expect(groups[0]?.articles.map((a) => a.id)).toEqual([1, 2]);
+    expect(excludedIds).toContain(3);
+  });
+});

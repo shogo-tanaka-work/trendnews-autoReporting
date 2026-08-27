@@ -25,6 +25,12 @@ export type NotifiableArticle = {
    */
   sourceNames?: string[];
   emoji?: string;
+  /** 発信4本柱のタグ。付いていれば context 行へ出す */
+  tags?: string[];
+  /** ランキング選抜のスコア（0〜1）。ダイジェストの並び順の根拠として残す */
+  score?: number;
+  /** 注目度と分類（"1,234 users ｜ テクノロジー"）。ダイジェストで出典の補足に使う */
+  detail?: string | null;
 };
 
 export type ArticleGroup = {
@@ -52,6 +58,10 @@ function contextText(article: NotifiableArticle): string {
   if (article.sourceNames && article.sourceNames.length > 0) {
     const emoji = article.emoji ? `${article.emoji} ` : '';
     parts.push(`${emoji}${article.sourceNames.join(' + ')}`);
+  }
+
+  if (article.tags && article.tags.length > 0) {
+    parts.push(`\`${article.tags.join('/')}\``);
   }
 
   return parts.join('　|　');

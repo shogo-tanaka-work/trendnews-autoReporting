@@ -121,6 +121,8 @@ export type NotifyDeps = {
 export type NotifyResult = {
   notifiedCount: number;
   failedMessages: number;
+  /** 実際に送信できた記事。昇格台帳へ書き出すために返す */
+  notified: NotifiableArticle[];
 };
 
 export async function notifyArticles(
@@ -136,15 +138,22 @@ export async function notifyArticles(
   await deps.markNotified(excludedIds, now.toISOString());
 
   const messages = buildArticleMessages(category.label, groups, now);
+  const byId = new Map(groups.flatMap((group) => group.articles).map((article) => [article.id, article]));
 
   let notifiedCount = 0;
   let failedMessages = 0;
+  const notified: NotifiableArticle[] = [];
 
   for (const message of messages) {
     try {
       await deps.slack.post({ channel: channelId, text: message.text, blocks: message.blocks });
       await deps.markNotified(message.articleIds, deps.now().toISOString());
       notifiedCount += message.articleIds.length;
+
+      for (const id of message.articleIds) {
+        const article = byId.get(id);
+        if (article) notified.push(article);
+      }
     } catch (err) {
       // 通知は縮退可能な失敗として扱い、収集自体は成功扱いのまま次回再送する
       failedMessages += 1;
@@ -156,5 +165,5 @@ export async function notifyArticles(
     }
   }
 
-  return { notifiedCount, failedMessages };
+  return { notifiedCount, failedMessages, notified };
 }

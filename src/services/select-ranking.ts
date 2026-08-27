@@ -10,6 +10,7 @@
  *   3. 同じ URL が複数の情報源に現れたら加点して束ねる
  *      （複数箇所で取り上げられている＝注目されている、という信号）
  */
+import { tagPillars } from '../config/pillars.js';
 import type { CategoryConfig, SourceConfig } from '../domain/source.js';
 import type { CollectedEntry, Selection } from './notify.js';
 import type { ArticleGroup, NotifiableArticle } from '../notifiers/blocks/articles.js';
@@ -23,6 +24,7 @@ type Bundle = {
   entries: CollectedEntry[];
   sources: SourceConfig[];
   score: number;
+  tags: string[];
 };
 
 /**
@@ -97,7 +99,29 @@ function toNotifiable(bundle: Bundle): NotifiableArticle {
     importance: null,
     sourceNames: bundle.sources.map((source) => source.name),
     emoji: bundle.sources[0]?.emoji ?? ':newspaper:',
+    tags: bundle.tags,
+    score: bundle.score,
+    detail: article.description,
   };
+}
+
+/** タグ判定に使う文字列。本文は持っていないのでタイトルと短い説明だけを見る */
+function pillarText(bundle: Bundle): string {
+  const article = bundle.primary.article;
+  return [article.title, article.description ?? '', article.categories.join(' ')].join('\n');
+}
+
+/**
+ * 4本柱に当たったものを優先し、残枠だけを無タグ（世間の話題）へ割く。
+ * スコア順のまま切ると、点数は高いが発信に繋がらない一般ニュースが上位を占めるため。
+ */
+function allocateByPillar(bundles: Bundle[], limit: number, untaggedSlots: number): Bundle[] {
+  const tagged = bundles.filter((bundle) => bundle.tags.length > 0);
+  const untagged = bundles.filter((bundle) => bundle.tags.length === 0);
+
+  const untaggedQuota = Math.min(untaggedSlots, Math.max(0, limit - tagged.length), untagged.length);
+
+  return [...tagged.slice(0, limit - untaggedQuota), ...untagged.slice(0, untaggedQuota)];
 }
 
 /**
@@ -151,7 +175,7 @@ export function selectRanking(category: CategoryConfig, entries: CollectedEntry[
     const existing = bundles.get(key);
 
     if (!existing) {
-      bundles.set(key, { primary: entry, entries: [entry], sources: [entry.source], score });
+      bundles.set(key, { primary: entry, entries: [entry], sources: [entry.source], score, tags: [] });
       continue;
     }
 
@@ -170,11 +194,16 @@ export function selectRanking(category: CategoryConfig, entries: CollectedEntry[
     .map((bundle) => ({
       ...bundle,
       score: bundle.score + CROSS_SOURCE_BONUS * (bundle.sources.length - 1),
+      tags: category.pillars ? tagPillars(pillarText(bundle)) : [],
     }))
     .sort((a, b) => b.score - a.score || publishedTime(b.primary) - publishedTime(a.primary));
 
-  const selected = scored.slice(0, limit);
-  const dropped = scored.slice(limit);
+  const selected = category.pillars
+    ? allocateByPillar(scored, limit, category.pillars.untaggedSlots)
+    : scored.slice(0, limit);
+
+  const chosen = new Set(selected);
+  const dropped = scored.filter((bundle) => !chosen.has(bundle));
 
   for (const bundle of dropped) {
     for (const entry of bundle.entries) excludedIds.push(entry.article.id);

@@ -91,6 +91,19 @@
   `UNIQUE(source_id, external_id)` による恒久的な重複排除へ置き換える。
 - 日付: 2026-08-27
 
+## ADR-013: Slack は入口、archive/ が昇格台帳
+- 決定: `archiveDigest: true` のカテゴリは、通知できた記事を
+  `archive/YYYY/MM/YYYY-MM-DD.md` へチェックボックス付きで書き出す
+- 理由: Slack は流れて消えるため、「掘る対象を選ぶ」作業には向かない。
+  旧 trend-keyword-researcher が持っていた archive → picks → 発信運用の導線は
+  運用として機能していたので、通知先を Slack へ移しても台帳は残す。
+- 補足: 台帳は通知が成功した分だけ書く。送信前に書くと、失敗して再送された回で
+  同じ日の台帳を二度書くことになる。同日再実行時は追記ではなく上書きする。
+- 補足: 台帳の commit / push は systemd の ExecStartPost（trend_digest 専用の
+  drop-in）で行う。ProtectSystem=strict のため archive/ と .git/ を
+  ReadWritePaths で明示的に開ける必要がある。
+- 日付: 2026-08-27
+
 ## 現在のアーキテクチャ
 
 ```text

@@ -33,7 +33,7 @@ SQLite へ蓄積し、新着だけを Slack へ通知する。二次情報（X /
 
 | カテゴリ | 内容 | 方式 | スケジュール(JST) | selector | 1回の上限 |
 |---|---|---|---|---|---|
-| `trend_digest` | はてブ / HN / Qiita / Zenn / GitHub 急上昇 / YouTube 急上昇 / Google Trends | ランキング API | 07:15 | ranking | 15 |
+| `trend_digest` | はてブ / HN / Qiita / Zenn / GitHub 急上昇 / YouTube 急上昇 / Google Trends | ランキング API | 07:15 | ranking | 15 |（4本柱タグ付け＋台帳出力）
 | `economy_news` | 経済・市場・暗号資産 | RSS | 07:30 | ranking | 8 |
 | `ai_news` | AI 企業公式 / 国内 AI メディア | RSS | 08:00 | ranking | 10 |
 | `engineer_news` | 国内 IT 総合 / AWS / Google Workspace | RSS | 08:10 | ranking | 10 |
@@ -86,6 +86,25 @@ SQLite へ蓄積し、新着だけを Slack へ通知する。二次情報（X /
 毎回 job が `partial` になると本当の障害が埋もれるため。
 
 ラッコキーワードは有料前提のため入れていない。X API は 403 が X 側要因で確定しているため入れない。
+
+### 発信4本柱と昇格台帳
+
+`trend_digest` だけは `pillars` を設定し、発信の4本柱（`src/config/pillars.ts`）で
+タグ付けする。スコア順のまま切ると、点数は高いが発信に繋がらない一般ニュースが上位を
+占めるため、**タグが付いたものを優先し、無タグには最大3枠しか割かない**。
+
+| 柱 | 拾うもの |
+|---|---|
+| AIエンジニアリング | LLM / エージェント / MCP / RAG / 各社モデル |
+| 業務 | 自動化・効率化・SaaS・ノーコード |
+| 組織 | チーム・マネジメント・採用・評価制度 |
+| キャリア | 転職・副業・学習・資格 |
+
+`archiveDigest: true` のカテゴリは、通知できた記事を `archive/YYYY/MM/YYYY-MM-DD.md` へ
+チェックボックス付きの Markdown で書き出す。人が読み返して `picks/` へ昇格させるための台帳で、
+Slack は「気づく」ための入口という役割分担にしている。
+
+台帳の書き出しに失敗しても収集と通知は成立しているため、エラーを記録して縮退する。
 
 ## データモデル
 

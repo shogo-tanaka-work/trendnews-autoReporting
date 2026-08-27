@@ -69,6 +69,8 @@ sudo vi /opt/tech-radar/environment   # docs/SPEC.md の「環境変数」を KE
 npm run gen:systemd
 sudo cp systemd/*.service systemd/*.timer /etc/systemd/system/
 sudo cp -r systemd/generated/* /etc/systemd/system/
+# trend_digest は台帳の commit / push を行うため専用の drop-in が要る
+sudo cp -r 'systemd/tech-radar-collect@trend_digest.service.d' /etc/systemd/system/
 sudo systemctl daemon-reload
 
 # 4. API と収集タイマーを有効化
@@ -92,6 +94,27 @@ sqlite3 /opt/tech-radar/data/tech-radar.sqlite \
 
 スケジュールの正本は `src/config/categories.ts` の `schedule`。変更したら
 `npm run gen:systemd` → drop-in を再配置 → `systemctl daemon-reload` を行う。
+
+## 昇格の運用（trend_digest）
+
+トレンドダイジェストは Slack で気づくための入口で、掘る対象を選ぶのは `archive/` の台帳。
+
+```
+[Mac] 開発 ──push──> GitHub ──pull──> [ミニ PC] 毎朝 07:15 収集
+                                          ├─ Slack へ通知
+                                          └─ archive/YYYY/MM/*.md を commit して push
+[Mac] pull ──> チェックを付けた行を picks/ へ ──> 発信運用から symlink
+```
+
+1. ミニ PC が `archive/YYYY/MM/YYYY-MM-DD.md` を commit → Mac で pull
+2. 掘りたい項目のチェックボックスを埋め、`picks/` へ切り出す
+3. 発信運用側から `picks/` の該当ファイルへ symlink を張る
+
+台帳は**通知できた分だけ**書き出す。Slack 送信に失敗した記事は次回に再送されるため、
+送信前に書くと同じ日の台帳を二度書くことになる。
+
+`archive/` を push し返すので、ミニ PC の SSH 鍵に**書き込み権限**が要る
+（deploy key なら Allow write access）。
 
 ## 情報源を足す
 
