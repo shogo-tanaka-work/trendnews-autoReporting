@@ -79,6 +79,34 @@ export const CATEGORIES: CategoryConfig[] = [
       { id: 'whisky-magazine-jp', type: 'rss', name: 'Whisky Magazine Japan', url: 'https://whiskymag.jp/feed/', emoji: ':book:' },
     ],
   },
+
+  // ── ネタ週報（発信ネタ探し） ─────────────────────────────────────────
+  //
+  // 「決めた購読先の新着」ではなく「世の中の上位」から、発信の4本柱に当たるものを拾う。
+  // 読む時間が取れるのは週末なので、収集は毎日・通知は日曜朝にまとめる。
+  // 通知した分は archive/ の台帳に残し、昇格候補を選ぶ入口にする。
+  {
+    key: 'neta_weekly',
+    label: 'ネタ週報',
+    channelEnvKey: 'SLACK_CHANNEL_NETA_WEEKLY',
+    schedule: '*-*-* 09:00:00',
+    notifyDays: ['Sun'],
+    selector: 'ranking',
+    maxPerNotification: 15,
+    maxPerSource: 5,
+    // 4本柱に当たらない「世間の話題」も少しは拾うが、主役にはしない
+    pillars: { untaggedSlots: 3 },
+    archiveDigest: true,
+    sources: [
+      { id: 'trend-hatena', type: 'ranking', provider: 'hatena', name: 'はてブ', weight: 1.0, emoji: ':bookmark:' },
+      { id: 'trend-hackernews', type: 'ranking', provider: 'hackernews', name: 'Hacker News', weight: 0.9, emoji: ':orange_book:' },
+      { id: 'trend-google-trends', type: 'ranking', provider: 'google_trends', name: 'Google Trends', weight: 0.9, emoji: ':mag:' },
+      { id: 'trend-qiita', type: 'ranking', provider: 'qiita', name: 'Qiita', weight: 0.8, emoji: ':green_book:' },
+      { id: 'trend-zenn', type: 'ranking', provider: 'zenn', name: 'Zenn', weight: 0.8, emoji: ':closed_book:' },
+      // 触ってみたい OSS・ツールの候補（SHO-237）
+      { id: 'trend-github', type: 'ranking', provider: 'github_trending', name: 'GitHub 急上昇', weight: 0.7, emoji: ':octopus:' },
+    ],
+  },
 ];
 
 export const CATEGORY_KEYS: string[] = CATEGORIES.map((c) => c.key);

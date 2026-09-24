@@ -36,7 +36,9 @@ SQLite へ蓄積し、新着だけを Slack へ通知する。二次情報（X /
 | `economy_news` | 経済・市場・暗号資産 | RSS | 毎日 08:00 | 収集のたび | ranking | 8 |
 | `engineer_news` | 国内 IT 総合 / AWS / Google Workspace | RSS | 毎日 08:10 | 土曜のみ | ranking | 10 |
 | `whiskey_news` | ウイスキー | RSS | 毎日 19:00 | 土曜のみ | ranking | 10 |
-| Connpass | セミナー・勉強会（直近の金〜日、都内とオンライン） | Connpass API v2 | 木 20:00 | 収集のたび | — | 20（表示） |
+| `neta_weekly` | はてブ / HN / Google Trends / Qiita / Zenn / GitHub 急上昇 | ランキング API | 毎日 09:00 | 日曜のみ | ranking | 15 |（4本柱タグ付け＋台帳出力）
+| キーワードの動き | 追いかけるキーワードの前週比と急上昇の関連語 | SerpApi（Google Trends） | 日 08:50 | 収集のたび | — | 15（表示） |
+| Connpass | セミナー・勉強会（直近の金〜日、都内とオンライン＋中野近辺のオフライン2週間） | Connpass API v2 | 木 20:00 | 収集のたび | — | 15＋6（表示） |
 
 AI・クラウドの公式アップデートは shogo-works の日次 AI ニュース運用が担うため、ここでは扱わない。
 
@@ -54,8 +56,30 @@ AI・クラウドの公式アップデートは shogo-works の日次 AI ニュ�
 フィード先頭に近い記事になる。
 
 Connpass は金〜日に参加できるイベントを、前の木曜夜にまとめて確認する運用に合わせている。
-取得は開催日時順で API 上限の 100 件までとし、Slack には 20 件を載せ、残りは件数だけ示す。
+取得は開催日時順で API 上限の 100 件までとし、Slack には 15 件を載せ、残りは件数だけ示す。
 人気ランキングは Web で見られるため取得しない。
+
+あわせて、平日の夜でも行ける近場として、会場が中野・高円寺・新宿のオフライン開催を
+今日から2週間分拾う。API は都道府県までしか絞れないため、都内で取得して住所と会場名の文字列で判定する。
+週末の一覧に表示したものは近場の節に出さない。近場の取得に失敗しても週末分は通知する（job_runs は partial）。
+
+### キーワードの動き
+
+追いかけるキーワード（`src/config/keywords.ts`）の検索トレンドを、ネタ週報（日曜 09:00）の直前に
+同じチャンネルへ出す。記事ではないため articles テーブルには入れず、Connpass と同じく
+その回の内容をそのまま通知する。
+
+- 前週比: SerpApi `google_trends` の TIMESERIES（`today 1-m`）から、直近7日と前の7日の平均を比べる。
+  **1語ずつ**取る。複数語をまとめると、検索量の大きい語を 100 とした相対値になり、小さい語が
+  0〜1 に張り付いて前週比が雑音になるため。過去の値を DB に持たなくてよい
+- 急上昇の関連語: RELATED_QUERIES（`now 7-d`）の rising を1語3件まで
+- 前週比 ±20% 以上、新出、急上昇の関連語があるものだけ本文に載せ、残りは1行にまとめる
+- 全語を `archive/YYYY/MM/YYYY-MM-DD-keywords.md` に残す（commit と push は同じ日曜の neta_weekly が行う）。
+  再送の仕組みがないので、台帳は通知より先に書く
+- 推移の取得に失敗した語は「取得失敗」、関連クエリだけ失敗した語は件数を末尾に出し、job_runs を partial にする
+
+SerpApi の消費は1回あたり 2N 検索（N は語数）。17語・週1回で月150検索ほど。
+ネタ週報の急上昇ワード（日次で月30検索）と合わせても無料枠の 250 に収まる。
 
 ### selector
 
@@ -71,7 +95,7 @@ Connpass は金〜日に参加できるイベントを、前の木曜夜にま�
 ### ランキング情報源（`type: 'ranking'`）
 
 「決めた購読先の新着」ではなく「世の中の上位N件」を取る情報源。`provider` で実装を切り替える。
-`trend_digest` の廃止により、現在これを使うカテゴリはない（実装は残している）。
+現在は `neta_weekly`（ネタ週報）が使う。
 
 | provider | 取得元 | 鍵 | 重み | 拾うもの |
 |---|---|---|---|---|
@@ -101,7 +125,7 @@ Connpass は金〜日に参加できるイベントを、前の木曜夜にま�
 | 組織 | チーム・マネジメント・採用・評価制度 |
 | キャリア | 転職・副業・学習・資格 |
 
-`trend_digest` の廃止により、現在 `pillars` と `archiveDigest` を持つカテゴリはない（実装は残している）。
+現在 `pillars` と `archiveDigest` を持つのは `neta_weekly` だけ。
 
 `archiveDigest: true` のカテゴリは、通知できた記事を `archive/YYYY/MM/YYYY-MM-DD.md` へ
 チェックボックス付きの Markdown で書き出す。人が読み返して `picks/` へ昇格させるための台帳で、
@@ -150,12 +174,15 @@ SLACK_BOT_TOKEN=xoxb-your-token-here
 SLACK_CHANNEL_ECONOMY_NEWS=C0XXXXXXXXX
 SLACK_CHANNEL_ENGINEER_NEWS=C0XXXXXXXXX
 SLACK_CHANNEL_WHISKEY_NEWS=C0XXXXXXXXX
+SLACK_CHANNEL_NETA_WEEKLY=C0XXXXXXXXX
 
 # 情報源の API キー
 # GITHUB_TOKEN は public repo の read のみ（未設定でも動くがレート制限が 60 req/h になる）
 GITHUB_TOKEN=
-# YouTube / Google Trends（SerpAPI）は ranking 情報源で使う。現在これを使うカテゴリはない
+# YouTube は現在使うカテゴリがない
 YOUTUBE_API_KEY=
+# Google Trends（SerpAPI。無料枠 250検索/月）。急上昇ワードは日次で月30回、キーワードの動きは週1で月150回ほど
+# 未設定なら neta_weekly の Google Trends とキーワードの動きがスキップされる
 SERPAPI_API_KEY=
 CONNPASS_API_KEY=your-connpass-api-key-here
 SLACK_CHANNEL_CONNPASS=C0XXXXXXXXX
@@ -171,7 +198,7 @@ LOG_LEVEL=info
 ```
 
 **廃止した変数**: `SLACK_CHANNEL_AI_NEWS` / `_BUSINESS_NEWS` / `_FITNESS_NEWS` / `_TECH_CLOUD` /
-`_TECH_WEB` / `_TECH_AI` / `_TECH_YOUTUBE` / `_TREND_DIGEST`（カテゴリ廃止）、
+`_TECH_WEB` / `_TECH_AI` / `_TECH_YOUTUBE` / `_TREND_DIGEST`（カテゴリ廃止。trend_digest は neta_weekly へ移行）、
 `CRON_*`（→ systemd timer / `categories.ts` の `schedule`）、
 `FILTER_HOURS`（→ DB による重複排除）。
 

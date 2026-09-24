@@ -14,7 +14,8 @@
 
 - フェーズ: ミニ PC（`/opt/tech-radar`、systemd）で本番稼働中。通知は economy / engineer / whiskey / connpass の4本に絞った。
 - 次にやること: ミニ PC へ反映し、廃止カテゴリの timer を止める（手順は README「カテゴリを廃止したとき」）。connpass を手動実行して都内・オンラインに絞れているか確認する。
-- その後: キーワードトレンド通知と、発信ネタへの昇格（posting-manager 連携）の設計。
+- 実装済み（ミニ PC 未反映）: ネタ週報（neta_weekly、日曜 09:00）、キーワードの動き（日曜 08:50）、connpass の中野近辺オフライン。
+- その後: 台帳（archive/）を cloud routine で読み、SE 目線の切り口を付けて Linear に週1件起票する（SHO-237 の昇格先）。
 
 ## 決定済みで動かさないこと
 
@@ -33,5 +34,7 @@
 - 通知日（土曜）に実行を逃すと、`notifyDays` のカテゴリは翌週の通知日まで持ち越しになる。
 
 ## 落とし穴
+
+- `tsconfig.test.json` は `tsconfig.json` の exclude（`**/*.test.ts`）を継承しており、テストファイルは型検査されていない。
 
 - `gen:systemd` は配置済みの timer を消さない。カテゴリを削除したらミニ PC 側で disable する。
