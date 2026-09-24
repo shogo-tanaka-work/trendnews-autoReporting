@@ -4,6 +4,8 @@ import { buildKeywordMessage } from '../src/notifiers/blocks/keywords.js';
 import {
   byMovement,
   isNotable,
+  normalizeQuery,
+  refineRisingQueries,
   renderKeywordDigest,
   weekOverWeek,
   type KeywordTrend,
@@ -68,6 +70,136 @@ describe('isNotable', () => {
     expect(isNotable(trend({ changePct: 19 }), 20)).toBe(false);
     expect(isNotable(trend({ changePct: null }), 20)).toBe(false);
     expect(isNotable(trend({ changePct: 90, error: 'HTTP 500' }), 20)).toBe(false);
+  });
+});
+
+describe('normalizeQuery', () => {
+  it('日本語の間の空白だけを詰める', () => {
+    expect(normalizeQuery('脆弱 性')).toBe('脆弱性');
+    expect(normalizeQuery('知 的 エージェント')).toBe('知的エージェント');
+    expect(normalizeQuery('サプライ チェーン')).toBe('サプライチェーン');
+    expect(normalizeQuery('note 副業')).toBe('note 副業');
+    expect(normalizeQuery('codex app server')).toBe('codex app server');
+  });
+});
+
+describe('refineRisingQueries', () => {
+  const rising = (...pairs: [string, string][]) => pairs.map(([query, value]) => ({ query, value }));
+
+  // 2026-09-25 の台帳に出た関連クエリ（取得時点で先頭3件に切られていたもの）
+  const fetched = [
+    trend({
+      keyword: 'Claude Code',
+      risingQueries: rising(['best time to visit maldives', '急激増加'], ['how to bake a cake', '急激増加'], ['jev', '2,400% 増加']),
+    }),
+    trend({ keyword: 'Codex', risingQueries: rising(['jev', '1,950% 増加'], ['codex app server', '70% 増加'], ['opencode', '60% 増加']) }),
+    trend({ keyword: 'Cursor', risingQueries: rising(['how to bake a cake', '急激増加'], ['jev', '1,550% 増加'], ['翻译', '850% 増加']) }),
+    trend({ keyword: 'AIエージェント', risingQueries: rising(['jev', '1,350% 増加'], ['muse', '350% 増加'], ['知 的 エージェント', '110% 増加']) }),
+    trend({ keyword: 'Claude Code 料金', risingQueries: rising(['ドル 円', '170% 増加']) }),
+    trend({ keyword: 'RAG', risingQueries: rising(['maple leaf rag', '250% 増加'], ['京都 rag', '170% 増加'], ['augmented', '100% 増加']) }),
+    trend({
+      keyword: 'プロンプトインジェクション',
+      risingQueries: rising(['脆弱 性', '80% 増加'], ['ランサム ウェア', '70% 増加'], ['サプライ チェーン', '60% 増加']),
+    }),
+  ];
+  const ignored = ['best time to visit maldives', '翻译', 'ドル 円', 'maple leaf rag', '京都 rag'];
+
+  function keptQueries(trends: KeywordTrend[]): Record<string, string[]> {
+    return Object.fromEntries(trends.map((t) => [t.keyword, t.risingQueries.map((q) => q.query)]));
+  }
+
+  it('複数の語に出た無関係語と除外リストの語を落とし、表記を整える', () => {
+    const { trends, dropped } = refineRisingQueries(fetched, { ignored, maxPerKeyword: 3 });
+
+    expect(keptQueries(trends)).toEqual({
+      'Claude Code': [],
+      Codex: ['codex app server', 'opencode'],
+      Cursor: [],
+      AIエージェント: ['muse', '知的エージェント'],
+      'Claude Code 料金': [],
+      RAG: ['augmented'],
+      プロンプトインジェクション: ['脆弱性', 'ランサムウェア', 'サプライチェーン'],
+    });
+    expect(dropped).toEqual([
+      'Claude Code: best time to visit maldives',
+      'Claude Code: how to bake a cake',
+      'Claude Code: jev',
+      'Codex: jev',
+      'Cursor: how to bake a cake',
+      'Cursor: jev',
+      'Cursor: 翻译',
+      'AIエージェント: jev',
+      'Claude Code 料金: ドル円',
+      'RAG: maple leaf rag',
+      'RAG: 京都 rag',
+    ]);
+  });
+
+  it('複数の語に出ても、元の語の要素を含むクエリは残す', () => {
+    const { trends } = refineRisingQueries(
+      [
+        trend({ keyword: 'Claude Code', risingQueries: rising(['claude code skills', '+300%'], ['cursor vs claude code', '+100%']) }),
+        trend({ keyword: 'Cursor Claude Code 比較', risingQueries: rising(['cursor vs claude code', '+200%']) }),
+        trend({ keyword: 'Agent Skills', risingQueries: rising(['Claude Code Skills', '+200%']) }),
+      ],
+      { ignored: [], maxPerKeyword: 3 }
+    );
+
+    expect(keptQueries(trends)).toEqual({
+      'Claude Code': ['claude code skills', 'cursor vs claude code'],
+      'Cursor Claude Code 比較': ['cursor vs claude code'],
+      'Agent Skills': ['Claude Code Skills'],
+    });
+  });
+
+  it('英字の要素は単語境界で比べ、短い要素は関連の判定に使わない', () => {
+    const { trends } = refineRisingQueries(
+      [
+        trend({ keyword: 'RAG', risingQueries: rising(['storage', '+1%'], ['rag 構築', '+1%']) }),
+        trend({ keyword: '業務効率化 AI', risingQueries: rising(['storage', '+1%'], ['aim', '+1%'], ['rag 構築', '+1%']) }),
+        trend({ keyword: 'Codex', risingQueries: rising(['aim', '+1%']) }),
+      ],
+      { ignored: [], maxPerKeyword: 3 }
+    );
+
+    expect(keptQueries(trends)).toEqual({ RAG: ['rag 構築'], '業務効率化 AI': [], Codex: [] });
+  });
+
+  it('1語の中で重複したクエリは2語に出たとは数えず、空のクエリは除く', () => {
+    const { trends } = refineRisingQueries(
+      [trend({ keyword: 'Codex', risingQueries: rising(['opencode', '+60%'], ['OpenCode', '+50%'], [' ', '+1%']) })],
+      { ignored: [], maxPerKeyword: 3 }
+    );
+
+    expect(trends[0]?.risingQueries).toEqual([{ query: 'opencode', value: '+60%' }]);
+  });
+
+  it('除外リストは大小文字と空白の違いを無視する', () => {
+    const { trends } = refineRisingQueries(
+      [trend({ keyword: 'RAG', risingQueries: rising(['Maple Leaf RAG', '+1%'], ['ドル円', '+1%'], ['ドル  円', '+1%']) })],
+      { ignored: ['maple leaf rag', 'ドル 円'], maxPerKeyword: 3 }
+    );
+
+    expect(trends[0]?.risingQueries).toEqual([]);
+  });
+
+  it('除いたあとで件数を切るので、4件目以降の妥当な語を拾える', () => {
+    const { trends } = refineRisingQueries(
+      [
+        trend({ keyword: 'Codex', risingQueries: rising(['jev', '+1%'], ['a', '+1%'], ['b', '+1%'], ['c', '+1%'], ['d', '+1%']) }),
+        trend({ keyword: 'Cursor', risingQueries: rising(['jev', '+1%']) }),
+      ],
+      { ignored: [], maxPerKeyword: 3 }
+    );
+
+    expect(keptQueries(trends).Codex).toEqual(['a', 'b', 'c']);
+  });
+
+  it('ノイズだけだった語は「動いた」扱いにならない', () => {
+    const { trends } = refineRisingQueries(fetched, { ignored, maxPerKeyword: 3 });
+    const claudeCode = trends.find((t) => t.keyword === 'Claude Code');
+
+    expect(claudeCode && isNotable({ ...claudeCode, changePct: 5 }, 20)).toBe(false);
   });
 });
 

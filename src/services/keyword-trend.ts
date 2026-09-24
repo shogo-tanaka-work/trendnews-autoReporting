@@ -42,6 +42,110 @@ export function weekOverWeek(points: TimelinePoint[]): { recentAverage: number; 
   return { recentAverage: recent, changePct: Math.round(((recent - previous) / previous) * 100) };
 }
 
+/** 日本語の文字の間だけの空白。Google は「脆弱 性」のように分かち書きして返す */
+const SPACE_BETWEEN_JAPANESE = /(?<=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}ー])\s+(?=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}ー])/gu;
+
+/** 表示用の表記。日本語の間の空白を詰め、英語の語間は残す */
+export function normalizeQuery(query: string): string {
+  return query.trim().replace(SPACE_BETWEEN_JAPANESE, '');
+}
+
+/** 比較用のキー。大小文字と空白（英語の語間を含む）の違いを無視する */
+function matchKey(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, '');
+}
+
+/** 英字の要素は単語境界で、日本語を含む要素は部分一致で比べる */
+const ASCII_TOKEN = /^[\x21-\x7e]+$/;
+/** 「AI」のような短い英字の要素は、無関係な語（「aim」など）に紛れやすいので関連の判定に使わない */
+const MIN_ASCII_TOKEN_LENGTH = 3;
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * 元の語の要素（空白区切り）のどれかを含むか。
+ * 「Cursor Claude Code 比較」に対する「cursor vs claude code」のように、語全体でなく要素で見る。
+ * 英字は単語境界で比べ、「RAG」が「storage」に一致しないようにする。
+ */
+function mentionsKeyword(query: string, keyword: string): boolean {
+  const lowerQuery = query.toLowerCase();
+  const queryKey = matchKey(query);
+
+  return keyword
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((token) => token !== '')
+    .some((token) => {
+      if (!ASCII_TOKEN.test(token)) return queryKey.includes(token);
+      if (token.length < MIN_ASCII_TOKEN_LENGTH) return false;
+      return new RegExp(`(^|[^a-z0-9])${escapeRegExp(token)}($|[^a-z0-9])`).test(lowerQuery);
+    });
+}
+
+export type RisingFilterOptions = {
+  ignored: string[];
+  maxPerKeyword: number;
+};
+
+/**
+ * 急上昇の関連クエリからノイズを除き、1語あたりの件数に切る。純関数。
+ *
+ * - 除外リストの語を落とす
+ * - 2語以上に同時に出たクエリは、元の語と無関係な全体の急上昇（「jev」など）とみなして落とす。
+ *   ただし元の語の要素を含むもの（Codex の「codex app server」）は関連が明らかなので残す
+ * - 除外は全語を取り終えてから行う。先に件数で切ると、除いた分だけ妥当な語を取りこぼすため
+ *
+ * 既知の取りこぼし: 元の語を含まない妥当なクエリが近い2語に同時に出ると落ちる
+ * （「opencode」が Codex と Claude Code の両方に出た場合など）。
+ * 閾値を3語に上げると2語だけに出る無関係語（「how to bake a cake」）が残るため、こちらを許容する。
+ * また関連クエリの取得に失敗した語は数に入らないので、失敗が多い回は全体の急上昇が残りやすい。
+ *
+ * dropped は除外リストの見直し用に「語: クエリ」の組で返す。
+ */
+export function refineRisingQueries(
+  trends: KeywordTrend[],
+  options: RisingFilterOptions
+): { trends: KeywordTrend[]; dropped: string[] } {
+  const ignored = new Set(options.ignored.map(matchKey));
+
+  const normalized = trends.map((trend) => {
+    const seen = new Set<string>();
+    const queries = trend.risingQueries.flatMap((rising) => {
+      const query = normalizeQuery(rising.query);
+      const key = matchKey(query);
+      // 同じ語の中の重複は1件に数える。2語に出たと誤って数えないため
+      if (key === '' || seen.has(key)) return [];
+      seen.add(key);
+      return [{ ...rising, query }];
+    });
+    return { trend, queries };
+  });
+
+  const keywordsPerQuery = new Map<string, number>();
+  for (const { queries } of normalized) {
+    for (const { query } of queries) {
+      const key = matchKey(query);
+      keywordsPerQuery.set(key, (keywordsPerQuery.get(key) ?? 0) + 1);
+    }
+  }
+
+  const dropped: string[] = [];
+  const refined = normalized.map(({ trend, queries }) => {
+    const kept = queries.filter(({ query }) => {
+      const key = matchKey(query);
+      const isShared = (keywordsPerQuery.get(key) ?? 0) >= 2 && !mentionsKeyword(query, trend.keyword);
+      const isNoise = ignored.has(key) || isShared;
+      if (isNoise) dropped.push(`${trend.keyword}: ${query}`);
+      return !isNoise;
+    });
+    return { ...trend, risingQueries: kept.slice(0, options.maxPerKeyword) };
+  });
+
+  return { trends: refined, dropped };
+}
+
 /** 通知に載せるべき動きがあるか。前週比が閾値以上か、急上昇の関連クエリがある */
 export function isNotable(trend: KeywordTrend, thresholdPct: number): boolean {
   if (trend.error) return false;

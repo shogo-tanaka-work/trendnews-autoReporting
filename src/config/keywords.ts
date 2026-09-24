@@ -41,3 +41,17 @@ export const NOTABLE_CHANGE_PCT = 20;
 
 /** 1キーワードあたりに載せる急上昇の関連クエリ数 */
 export const MAX_RISING_QUERIES = 3;
+
+/**
+ * 急上昇の関連クエリから除く語。大小文字と空白の違いは無視して完全一致で比べる。
+ *
+ * 複数の語に同時に出る無関係語（Google Trends 全体の急上昇）は自動で除くので、
+ * ここに足すのは1語にだけ出て自動では落ちないものに限る。
+ */
+export const IGNORED_RISING_QUERIES: string[] = [
+  'best time to visit maldives',
+  '翻译',
+  'ドル 円',
+  'maple leaf rag',
+  '京都 rag',
+];

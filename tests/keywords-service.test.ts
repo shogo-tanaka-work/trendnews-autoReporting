@@ -13,6 +13,7 @@ import { collectKeywordTrends } from '../src/services/keywords.js';
 const behavior = vi.hoisted(() => ({
   failTimeseries: new Set<string>(),
   failRising: new Set<string>(),
+  rising: new Map<string, { query: string; value: string }[]>(),
 }));
 
 vi.mock('../src/collectors/google-trends-keywords.js', () => ({
@@ -28,7 +29,7 @@ vi.mock('../src/collectors/google-trends-keywords.js', () => ({
 
     fetchRisingQueries(keyword: string): Promise<{ query: string; value: string }[]> {
       if (behavior.failRising.has(keyword)) return Promise.reject(new Error('HTTP 429'));
-      return Promise.resolve([]);
+      return Promise.resolve(behavior.rising.get(keyword) ?? []);
     }
   },
 }));
@@ -71,6 +72,7 @@ describe('collectKeywordTrends', () => {
     archiveDir = await mkdtemp(join(tmpdir(), 'keywords-'));
     behavior.failTimeseries.clear();
     behavior.failRising.clear();
+    behavior.rising.clear();
   });
 
   afterEach(() => db.close());
@@ -103,5 +105,33 @@ describe('collectKeywordTrends', () => {
     const ledger = await readFile(join(archiveDir, '2026', '09', '2026-09-28-keywords.md'), 'utf-8');
     expect(ledger).toContain('**Claude Code** +100%');
     expect(lastJobRun().status).toBe('failed');
+  });
+
+  it('複数の語に出た無関係な関連クエリは台帳にも通知にも載せない', async () => {
+    behavior.rising.set('Claude Code', [{ query: 'jev', value: '+2400%' }]);
+    behavior.rising.set('Codex', [
+      { query: 'jev', value: '+1950%' },
+      { query: 'codex app server', value: '+70%' },
+    ]);
+
+    await collectKeywordTrends(deps(), 'C_TEST');
+
+    const ledger = await readFile(join(archiveDir, '2026', '09', '2026-09-28-keywords.md'), 'utf-8');
+    expect(ledger).not.toContain('jev');
+    expect(ledger).toContain('codex app server（+70%）');
+    expect(JSON.stringify(posts[0]?.blocks)).not.toContain('jev');
+  });
+
+  it('関連クエリは除外のあとで1語3件に切って台帳に残す', async () => {
+    behavior.rising.set(
+      'Codex',
+      ['a', 'b', 'c', 'd'].map((query) => ({ query: `codex ${query}`, value: '+10%' }))
+    );
+
+    await collectKeywordTrends(deps(), 'C_TEST');
+
+    const ledger = await readFile(join(archiveDir, '2026', '09', '2026-09-28-keywords.md'), 'utf-8');
+    expect(ledger).toContain('codex c（+10%）');
+    expect(ledger).not.toContain('codex d');
   });
 });

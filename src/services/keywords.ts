@@ -5,13 +5,13 @@
  * 直近30日の推移から毎回計算できるため、過去の値も持たない（Connpass と同じ扱い）。
  */
 import { GoogleTrendsKeywordCollector } from '../collectors/google-trends-keywords.js';
-import { KEYWORD_GROUPS, MAX_RISING_QUERIES, NOTABLE_CHANGE_PCT } from '../config/keywords.js';
+import { IGNORED_RISING_QUERIES, KEYWORD_GROUPS, MAX_RISING_QUERIES, NOTABLE_CHANGE_PCT } from '../config/keywords.js';
 import type { JobStatus } from '../domain/article.js';
 import { saveDigest, tokyoDate } from '../lib/archive.js';
 import { logger, toErrorMessage } from '../lib/logger.js';
 import { buildKeywordMessage } from '../notifiers/blocks/keywords.js';
 import type { CollectDeps } from './collect.js';
-import { renderKeywordDigest, weekOverWeek, type KeywordTrend } from './keyword-trend.js';
+import { refineRisingQueries, renderKeywordDigest, weekOverWeek, type KeywordTrend } from './keyword-trend.js';
 
 const DEFAULT_ARCHIVE_DIR = 'archive';
 
@@ -24,7 +24,10 @@ export type KeywordSummary = {
 
 type Watched = { keyword: string; group: string };
 
-/** 1語分を取得する。推移の失敗は語ごとの失敗、関連クエリの失敗は縮退（推移は出す） */
+/**
+ * 1語分を取得する。推移の失敗は語ごとの失敗、関連クエリの失敗は縮退（推移は出す）。
+ * 関連クエリはここでは切らず、全語を取り終えてから refineRisingQueries でノイズを除いて切る。
+ */
 async function buildTrend(collector: GoogleTrendsKeywordCollector, watched: Watched): Promise<KeywordTrend> {
   const base = { keyword: watched.keyword, group: watched.group };
 
@@ -41,7 +44,7 @@ async function buildTrend(collector: GoogleTrendsKeywordCollector, watched: Watc
 
   try {
     const rising = await collector.fetchRisingQueries(watched.keyword);
-    return { ...base, recentAverage, changePct, risingQueries: rising.slice(0, MAX_RISING_QUERIES), risingError: false, error: null };
+    return { ...base, recentAverage, changePct, risingQueries: rising, risingError: false, error: null };
   } catch (err) {
     logger.warn('関連クエリの取得に失敗しました', { keyword: watched.keyword, error: toErrorMessage(err) });
     return { ...base, recentAverage, changePct, risingQueries: [], risingError: true, error: null };
@@ -77,9 +80,16 @@ export async function collectKeywordTrends(
     const watched = KEYWORD_GROUPS.flatMap((group) => group.keywords.map((keyword) => ({ keyword, group: group.label })));
 
     // SerpApi の時間あたり上限を気にして直列にする（1回の実行で語数×2 検索）
-    const trends: KeywordTrend[] = [];
-    for (const w of watched) trends.push(await buildTrend(collector, w));
-    processedCount = trends.length;
+    const fetched: KeywordTrend[] = [];
+    for (const w of watched) fetched.push(await buildTrend(collector, w));
+    processedCount = fetched.length;
+
+    const { trends, dropped } = refineRisingQueries(fetched, {
+      ignored: IGNORED_RISING_QUERIES,
+      maxPerKeyword: MAX_RISING_QUERIES,
+    });
+    // 除外リストを見直すときの手がかり。検索語は Google Trends の公開データで個人情報を含まない
+    if (dropped.length > 0) logger.info('ノイズとみなした関連クエリを除きました', { dropped: dropped.join(' / ') });
 
     const failed = trends.filter((trend) => trend.error !== null).length;
     const risingFailed = trends.filter((trend) => trend.risingError).length;
