@@ -26,6 +26,7 @@ npm test
 npm run collect -- engineer_news   # 単一カテゴリを収集（カテゴリ一覧は npm run collect -- nope で表示）
 npm run collect -- all          # 全カテゴリを直列で収集
 npm run connpass                # Connpass セミナー情報を通知
+npm run keywords                # 追いかけるキーワードの動きを通知（SERPAPI_API_KEY 必須）
 npm run dev                     # Hono API を起動（http://127.0.0.1:3000）
 npm run build                   # dist/ へビルド
 npm run gen:systemd             # カテゴリ設定から systemd timer の drop-in を生成
@@ -60,6 +61,7 @@ cd /opt/tech-radar
 sudo -u techradar npm ci
 sudo -u techradar npm run build
 sudo install -d -o techradar -g techradar /opt/tech-radar/data
+sudo install -d -o techradar -g techradar /opt/tech-radar/archive
 
 # 2. 秘密情報はプロジェクトルート直下の environment へ置く（Git 管理外。共有領域へ散らさない）
 sudo install -m 0640 -o root -g techradar /dev/null /opt/tech-radar/environment
@@ -76,6 +78,7 @@ sudo systemctl daemon-reload
 # 4. API と収集タイマーを有効化
 sudo systemctl enable --now tech-radar-api.service
 sudo systemctl enable --now tech-radar-connpass.timer
+sudo systemctl enable --now tech-radar-keywords.timer
 for c in economy_news engineer_news whiskey_news neta_weekly; do
   sudo systemctl enable --now "tech-radar-collect@$c.timer"
 done

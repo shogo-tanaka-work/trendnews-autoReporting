@@ -5,8 +5,12 @@ import type { KnownBlock } from '@slack/web-api';
 import type { ConnpassEvent } from '../../collectors/connpass.js';
 import { formatJst, formatJstEvent } from '../../lib/datetime.js';
 
-/** 1イベント2ブロック＋見出し4ブロックで、Slack の上限 50 ブロックに収まる件数 */
-const MAX_EVENTS = 20;
+/**
+ * 1イベント2ブロック。見出し4＋週末15件（30）＋近場の見出し2＋近場6件（12）で 48 ブロックになり、
+ * Slack の上限 50 ブロックに収まる。
+ */
+const MAX_EVENTS = 15;
+const MAX_NEARBY = 6;
 const MAX_BLOCKS = 50;
 
 function participantText(event: ConnpassEvent): string {
@@ -44,15 +48,27 @@ function eventBlocks(event: ConnpassEvent): KnownBlock[] {
   ];
 }
 
+export type ConnpassMessageInput = {
+  /** 直近の週末（都内・オンライン） */
+  weekend: ConnpassEvent[];
+  /** 週末の条件に合う全件数 */
+  weekendTotal: number;
+  /** 中野近辺のオフライン（2週間） */
+  nearby: ConnpassEvent[];
+};
+
 export function buildConnpassMessage(
-  events: ConnpassEvent[],
-  totalAvailable: number,
+  input: ConnpassMessageInput,
   now: Date
 ): { text: string; blocks: KnownBlock[] } | null {
-  if (events.length === 0) return null;
+  const limited = input.weekend.slice(0, MAX_EVENTS);
+  const shownIds = new Set(limited.map((event) => event.id));
+  // 週末の一覧に表示したものは近場の節で重ねて出さない（省略した分は近場の節に残す）
+  const nearby = input.nearby.filter((event) => !shownIds.has(event.id)).slice(0, MAX_NEARBY);
 
-  const limited = events.slice(0, MAX_EVENTS);
-  const total = Math.max(totalAvailable, events.length);
+  if (limited.length === 0 && nearby.length === 0) return null;
+
+  const total = Math.max(input.weekendTotal, input.weekend.length);
   const omitted = total - limited.length;
 
   const blocks: KnownBlock[] = [
@@ -66,15 +82,26 @@ export function buildConnpassMessage(
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `:calendar: *金〜日の開催*  _(${limited.length}件${omitted > 0 ? `、ほか${omitted}件は省略` : ''})_`,
+        text:
+          limited.length === 0
+            ? ':calendar: *金〜日の開催*  _(該当なし)_'
+            : `:calendar: *金〜日の開催*  _(${limited.length}件${omitted > 0 ? `、ほか${omitted}件は省略` : ''})_`,
       },
     },
   ];
 
   for (const event of limited) blocks.push(...eventBlocks(event));
 
+  if (nearby.length > 0) {
+    blocks.push(
+      { type: 'divider' },
+      { type: 'section', text: { type: 'mrkdwn', text: `:round_pushpin: *中野近辺のオフライン（2週間）*  _(${nearby.length}件)_` } }
+    );
+    for (const event of nearby) blocks.push(...eventBlocks(event));
+  }
+
   return {
-    text: `🎓 今週末のセミナー（都内・オンライン）: ${total}件`,
+    text: `🎓 今週末のセミナー（都内・オンライン）: ${total}件 / 中野近辺: ${nearby.length}件`,
     blocks: blocks.slice(0, MAX_BLOCKS),
   };
 }

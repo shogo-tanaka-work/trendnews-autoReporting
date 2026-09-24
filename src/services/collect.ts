@@ -5,7 +5,7 @@
  * Hono の POST /admin/collect が同じ関数を呼ぶ。
  */
 import { CATEGORIES, findCategory } from '../config/categories.js';
-import { ConnpassCollector } from '../collectors/connpass.js';
+import { ConnpassCollector, type ConnpassEvent } from '../collectors/connpass.js';
 import { GithubReleaseCollector } from '../collectors/github.js';
 import { RankingCollector } from '../collectors/ranking/index.js';
 import { RssCollector } from '../collectors/rss.js';
@@ -333,8 +333,23 @@ export async function collectByKey(deps: CollectDeps, categoryKey: string): Prom
   return collectCategory(deps, category);
 }
 
+/** 近場の取得は追加の節なので、失敗しても週末の通知は止めない */
+async function fetchNearbyOrEmpty(
+  collector: ConnpassCollector,
+  keywords: string[],
+  now: Date
+): Promise<ConnpassEvent[] | null> {
+  try {
+    return await collector.fetchNearbyOfflineEvents(keywords, now);
+  } catch (err) {
+    logger.warn('中野近辺のイベント取得に失敗しました。週末分だけ通知します', { error: toErrorMessage(err) });
+    return null;
+  }
+}
+
 export type ConnpassSummary = {
   events: number;
+  nearby: number;
   notified: boolean;
 };
 
@@ -355,8 +370,13 @@ export async function collectConnpass(
   try {
     const collector = new ConnpassCollector(deps.connpassApiKey);
     const { events, totalAvailable } = await collector.fetchWeekendEvents(keywords, startedAt);
+    const nearby = await fetchNearbyOrEmpty(collector, keywords, startedAt);
 
-    const message = buildConnpassMessage(events, totalAvailable, deps.now());
+    const message = buildConnpassMessage(
+      { weekend: events, weekendTotal: totalAvailable, nearby: nearby ?? [] },
+      deps.now()
+    );
+    const uniqueCount = new Set([...events, ...(nearby ?? [])].map((event) => event.id)).size;
     let notified = false;
 
     if (message && channelId) {
@@ -367,16 +387,16 @@ export async function collectConnpass(
     }
 
     await deps.repos.jobRuns.finish(jobRunId, {
-      status: 'success',
-      processedCount: events.length,
-      newCount: events.length,
-      errorMessage: null,
+      status: nearby === null ? 'partial' : 'success',
+      processedCount: uniqueCount,
+      newCount: uniqueCount,
+      errorMessage: nearby === null ? '中野近辺のイベント取得に失敗' : null,
       finishedAt: deps.now().toISOString(),
     });
 
-    logger.info('Connpass の収集を終了します', { events: events.length, notified });
+    logger.info('Connpass の収集を終了します', { events: events.length, nearby: nearby?.length ?? null, notified });
 
-    return { events: events.length, notified };
+    return { events: events.length, nearby: nearby?.length ?? 0, notified };
   } catch (err) {
     const message = toErrorMessage(err);
     await deps.repos.jobRuns.finish(jobRunId, {
