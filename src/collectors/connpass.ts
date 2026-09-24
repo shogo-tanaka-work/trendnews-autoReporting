@@ -4,6 +4,7 @@
  * 記事とはデータ形状が異なる（開催予定のイベント）ため articles テーブルへは入れず、
  * 収集したその回の内容をそのまま Slack へ通知する。
  * 人気ランキングは Web で見られるため取得しない。
+ * 週末（都内・オンライン）に加え、中野近辺のオフライン開催を2週間分拾う。
  *
  * @see https://connpass.com/about/api/v2/
  */
@@ -11,6 +12,7 @@ import { z } from 'zod';
 import type { Weekday } from '../domain/source.js';
 import { tokyoWeekday } from '../lib/datetime.js';
 import { httpGetJson } from '../lib/http.js';
+import { logger } from '../lib/logger.js';
 
 const API_BASE = 'https://connpass.com/api/v2/events/';
 
@@ -45,6 +47,17 @@ const FETCH_COUNT = 100;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** API v2 は 1 秒 1 リクエストのレート制限がある */
+const RATE_LIMIT_INTERVAL_MS = 1100;
+
+/** 近場のオフライン開催として拾う範囲。平日の夜でも行ける距離（東中野は「中野」に含まれる） */
+const NEARBY_AREA = /中野|高円寺|新宿/;
+const NEARBY_DAYS = 14;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function tokyoYmd(date: Date): string {
   // en-CA は YYYY-MM-DD 形式で返る
   return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo' }).replaceAll('-', '');
@@ -69,6 +82,21 @@ export function upcomingWeekendYmd(now: Date): string[] {
   };
 
   return offsets[weekday].map((days) => tokyoYmd(new Date(now.getTime() + days * DAY_MS)));
+}
+
+/** 今日から days 日分の日付を yyyymmdd で返す。純関数 */
+export function nextDaysYmd(now: Date, days: number): string[] {
+  return Array.from({ length: days }, (_, offset) => tokyoYmd(new Date(now.getTime() + offset * DAY_MS)));
+}
+
+/**
+ * 会場が近場のオフライン開催か。API は都道府県までしか絞れないため、住所と会場名の文字列で判定する。
+ * 住所のないもの（オンライン開催）と、「オンライン（新宿から配信）」のような会場名は外す。
+ */
+export function isNearbyOffline(event: ConnpassEvent): boolean {
+  if (!event.address) return false;
+  if (event.place?.includes('オンライン')) return false;
+  return NEARBY_AREA.test(`${event.address} ${event.place ?? ''}`);
 }
 
 export type ConnpassSearchResult = {
@@ -109,5 +137,25 @@ export class ConnpassCollector {
     if (keywords.length > 0) params.keyword_or = keywords.join(',');
 
     return this.callApi(params);
+  }
+
+  /** 今日から2週間、中野近辺で開催されるオフラインのイベント（開催日順） */
+  async fetchNearbyOfflineEvents(keywords: string[], now: Date): Promise<ConnpassEvent[]> {
+    await sleep(RATE_LIMIT_INTERVAL_MS);
+
+    const params: Record<string, string | number> = {
+      ymd: nextDaysYmd(now, NEARBY_DAYS).join(','),
+      prefecture: 'tokyo',
+      count: FETCH_COUNT,
+      order: 2, // 開催日時順
+    };
+    if (keywords.length > 0) params.keyword_or = keywords.join(',');
+
+    const { events, totalAvailable } = await this.callApi(params);
+    if (totalAvailable > events.length) {
+      // 開催日順なので2週目側が落ちる。件数が多い週だけ起きるため、まずは気づけるようにする
+      logger.warn('近場の候補が取得上限で切れました', { fetched: events.length, totalAvailable });
+    }
+    return events.filter(isNearbyOffline);
   }
 }

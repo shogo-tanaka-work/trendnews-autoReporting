@@ -1,0 +1,12 @@
+[Unit]
+Description=Tech Radar keyword trend notifier timer
+
+[Timer]
+# ネタ週報（neta_weekly、日曜 09:00）の直前に出して、同じチャンネルで先頭に並べる
+OnCalendar=Sun *-*-* 08:50:00
+Persistent=true
+RandomizedDelaySec=60
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,30 @@
+[Unit]
+Description=Tech Radar keyword trend notifier
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=techradar
+Group=techradar
+WorkingDirectory=/opt/tech-radar
+EnvironmentFile=/opt/tech-radar/environment
+ExecStart=/usr/bin/node dist/jobs/keywords.js
+# 1語ずつ直列に SerpApi を呼ぶ（17語×2、1本最大60秒）
+TimeoutStartSec=900
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/opt/tech-radar/data
+# 台帳（archive/*-keywords.md）を書く。commit と push は同じ日曜の neta_weekly が行う
+# 先頭の - は、ディレクトリが無くても起動させるため（台帳は縮退可能）
+ReadWritePaths=-/opt/tech-radar/archive
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tech-radar-keywords
