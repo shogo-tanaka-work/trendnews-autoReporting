@@ -36,6 +36,7 @@ SQLite へ蓄積し、新着だけを Slack へ通知する。二次情報（X /
 | `economy_news` | 経済・市場・暗号資産 | RSS | 毎日 08:00 | 収集のたび | ranking | 8 |
 | `engineer_news` | 国内 IT 総合 / AWS / Google Workspace | RSS | 毎日 08:10 | 土曜のみ | ranking | 10 |
 | `whiskey_news` | ウイスキー | RSS | 毎日 19:00 | 土曜のみ | ranking | 10 |
+| `neta_weekly` | はてブ / HN / Google Trends / Qiita / Zenn / GitHub 急上昇 | ランキング API | 毎日 09:00 | 日曜のみ | ranking | 15 |（4本柱タグ付け＋台帳出力）
 | Connpass | セミナー・勉強会（直近の金〜日、都内とオンライン） | Connpass API v2 | 木 20:00 | 収集のたび | — | 20（表示） |
 
 AI・クラウドの公式アップデートは shogo-works の日次 AI ニュース運用が担うため、ここでは扱わない。
@@ -71,7 +72,7 @@ Connpass は金〜日に参加できるイベントを、前の木曜夜にま�
 ### ランキング情報源（`type: 'ranking'`）
 
 「決めた購読先の新着」ではなく「世の中の上位N件」を取る情報源。`provider` で実装を切り替える。
-`trend_digest` の廃止により、現在これを使うカテゴリはない（実装は残している）。
+現在は `neta_weekly`（ネタ週報）が使う。
 
 | provider | 取得元 | 鍵 | 重み | 拾うもの |
 |---|---|---|---|---|
@@ -101,7 +102,7 @@ Connpass は金〜日に参加できるイベントを、前の木曜夜にま�
 | 組織 | チーム・マネジメント・採用・評価制度 |
 | キャリア | 転職・副業・学習・資格 |
 
-`trend_digest` の廃止により、現在 `pillars` と `archiveDigest` を持つカテゴリはない（実装は残している）。
+現在 `pillars` と `archiveDigest` を持つのは `neta_weekly` だけ。
 
 `archiveDigest: true` のカテゴリは、通知できた記事を `archive/YYYY/MM/YYYY-MM-DD.md` へ
 チェックボックス付きの Markdown で書き出す。人が読み返して `picks/` へ昇格させるための台帳で、
@@ -150,12 +151,15 @@ SLACK_BOT_TOKEN=xoxb-your-token-here
 SLACK_CHANNEL_ECONOMY_NEWS=C0XXXXXXXXX
 SLACK_CHANNEL_ENGINEER_NEWS=C0XXXXXXXXX
 SLACK_CHANNEL_WHISKEY_NEWS=C0XXXXXXXXX
+SLACK_CHANNEL_NETA_WEEKLY=C0XXXXXXXXX
 
 # 情報源の API キー
 # GITHUB_TOKEN は public repo の read のみ（未設定でも動くがレート制限が 60 req/h になる）
 GITHUB_TOKEN=
-# YouTube / Google Trends（SerpAPI）は ranking 情報源で使う。現在これを使うカテゴリはない
+# YouTube は現在使うカテゴリがない
 YOUTUBE_API_KEY=
+# Google Trends 急上昇ワード（SerpAPI。無料枠 250検索/月、日次1回なら月30回）
+# 未設定なら neta_weekly の Google Trends だけがスキップされる
 SERPAPI_API_KEY=
 CONNPASS_API_KEY=your-connpass-api-key-here
 SLACK_CHANNEL_CONNPASS=C0XXXXXXXXX
@@ -171,7 +175,7 @@ LOG_LEVEL=info
 ```
 
 **廃止した変数**: `SLACK_CHANNEL_AI_NEWS` / `_BUSINESS_NEWS` / `_FITNESS_NEWS` / `_TECH_CLOUD` /
-`_TECH_WEB` / `_TECH_AI` / `_TECH_YOUTUBE` / `_TREND_DIGEST`（カテゴリ廃止）、
+`_TECH_WEB` / `_TECH_AI` / `_TECH_YOUTUBE` / `_TREND_DIGEST`（カテゴリ廃止。trend_digest は neta_weekly へ移行）、
 `CRON_*`（→ systemd timer / `categories.ts` の `schedule`）、
 `FILTER_HOURS`（→ DB による重複排除）。
 

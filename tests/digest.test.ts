@@ -17,6 +17,13 @@ describe('tagPillars', () => {
     expect(tagPillars('building an llm agent')).toEqual(['AIエンジニアリング']);
   });
 
+  it('Agent Skills・ハーネスエンジニアリング・Codex を AIエンジニアリングとして拾う', () => {
+    expect(tagPillars('Agent Skills の配置ルール')).toEqual(['AIエンジニアリング']);
+    expect(tagPillars('SKILL.md をどこに置くか')).toEqual(['AIエンジニアリング']);
+    expect(tagPillars('ハーネスエンジニアリング入門')).toEqual(['AIエンジニアリング']);
+    expect(tagPillars('Codex の新機能')).toEqual(['AIエンジニアリング']);
+  });
+
   it('組織とキャリアを区別する', () => {
     expect(tagPillars('エンジニア採用と評価制度の話')).toEqual(['組織']);
     expect(tagPillars('未経験からの転職ロードマップ')).toEqual(['キャリア']);

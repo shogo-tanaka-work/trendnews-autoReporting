@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 昇格台帳（archive/）をリポジトリへ記録して push する。
-# systemd の ExecStartPost から呼ばれる（trend_digest のみ）。
+# systemd の ExecStartPost から呼ばれる（neta_weekly のみ）。
 #
 # コードは Mac → GitHub → ミニ PC、台帳はミニ PC → GitHub → Mac の一方向。
 # 触るパスが src/ と archive/ に分かれるので衝突しない。
@@ -21,7 +21,7 @@ git add archive
 # コミット主体はここで明示する。ミニ PC 側の git 設定に依存させない
 git -c user.name="tech-radar (miniPC)" \
     -c user.email="s-tanaka@shogoworks.com" \
-    commit -m "chore: $(date +%F) のトレンドダイジェストを記録"
+    commit -m "chore: $(date +%F) のネタ週報を記録"
 
 # Mac 側がコードを push している場合に非 fast-forward で弾かれるのを避ける。
 # 台帳とコードは触るパスが違うので、rebase で衝突することはない

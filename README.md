@@ -69,12 +69,14 @@ sudo vi /opt/tech-radar/environment   # docs/SPEC.md の「環境変数」を KE
 npm run gen:systemd
 sudo cp systemd/*.service systemd/*.timer /etc/systemd/system/
 sudo cp -r systemd/generated/* /etc/systemd/system/
+# neta_weekly は台帳の commit / push を行うため専用の drop-in が要る
+sudo cp -r 'systemd/tech-radar-collect@neta_weekly.service.d' /etc/systemd/system/
 sudo systemctl daemon-reload
 
 # 4. API と収集タイマーを有効化
 sudo systemctl enable --now tech-radar-api.service
 sudo systemctl enable --now tech-radar-connpass.timer
-for c in economy_news engineer_news whiskey_news; do
+for c in economy_news engineer_news whiskey_news neta_weekly; do
   sudo systemctl enable --now "tech-radar-collect@$c.timer"
 done
 ```
@@ -104,15 +106,12 @@ sqlite3 /opt/tech-radar/data/tech-radar.sqlite \
 スケジュールの正本は `src/config/categories.ts` の `schedule`。変更したら
 `npm run gen:systemd` → drop-in を再配置 → `systemctl daemon-reload` を行う。
 
-## 昇格の運用（trend_digest）
+## 昇格の運用（neta_weekly）
 
-**`trend_digest` は廃止したため、この運用は現在止まっている。** 仕組み（`archiveDigest` と
-`scripts/commit-archive.sh`）は残しているので、再開するときは以下に従う。
-
-トレンドダイジェストは Slack で気づくための入口で、掘る対象を選ぶのは `archive/` の台帳。
+ネタ週報は Slack で気づくための入口で、掘る対象を選ぶのは `archive/` の台帳。
 
 ```
-[Mac] 開発 ──push──> GitHub ──pull──> [ミニ PC] 毎朝 07:15 収集
+[Mac] 開発 ──push──> GitHub ──pull──> [ミニ PC] 毎日 09:00 収集・日曜に通知
                                           ├─ Slack へ通知
                                           └─ archive/YYYY/MM/*.md を commit して push
 [Mac] pull ──> チェックを付けた行を picks/ へ ──> 発信運用から symlink
