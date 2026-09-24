@@ -1,30 +1,30 @@
 [Unit]
 Description=Tech Radar API (Hono)
-Documentation=file:///opt/tech-radar/README.md
+Documentation=file:///home/shogo/apps/trendnews-autoReporting/README.md
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=techradar
-Group=techradar
-WorkingDirectory=/opt/tech-radar
-# 秘密値はプロジェクトルート直下の environment から読む（root:techradar / 0640）。
-# 共有領域へ散らさないため /etc ではなく WorkingDirectory 直下へ置く。
-EnvironmentFile=/opt/tech-radar/environment
-ExecStart=/usr/bin/node dist/api/server.js
+User=shogo
+Group=shogo
+WorkingDirectory=/home/shogo/apps/trendnews-autoReporting
+# 秘密値は WorkingDirectory 直下の dotenv ファイルを src/lib/env.ts が読む。
+# EnvironmentFile= へ写すと開発時と systemd 実行時で内容がずれるため置かない。
+ExecStart=/home/shogo/.nvm/versions/node/v22.23.2/bin/node dist/api/server.js
 Restart=on-failure
 RestartSec=5
 
-# 最小権限
+# 最小権限。ProtectSystem=strict は /home も read-only にするので、
+# 書き込む先だけを ReadWritePaths で開ける。
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
+ProtectHome=false
 ProtectKernelTunables=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
-ReadWritePaths=/opt/tech-radar/data
+ReadWritePaths=/home/shogo/apps/trendnews-autoReporting/data
 
 StandardOutput=journal
 StandardError=journal
