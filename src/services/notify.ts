@@ -6,6 +6,7 @@
  */
 import type { Article, Importance } from '../domain/article.js';
 import type { CategoryConfig, SourceConfig } from '../domain/source.js';
+import { tokyoWeekday } from '../lib/datetime.js';
 import { logger, toErrorMessage } from '../lib/logger.js';
 import { buildArticleMessages, type ArticleGroup, type NotifiableArticle } from '../notifiers/blocks/articles.js';
 import type { SlackNotifier } from '../notifiers/slack.js';
@@ -110,6 +111,12 @@ export function selectForNotification(category: CategoryConfig, entries: Collect
   return category.selector === 'ranking'
     ? selectRanking(category, entries)
     : selectPerSource(category, entries);
+}
+
+/** notifyDays を指定したカテゴリは、その曜日（JST）だけ通知する。純関数。 */
+export function isNotifyDay(category: CategoryConfig, now: Date): boolean {
+  if (!category.notifyDays) return true;
+  return category.notifyDays.includes(tokyoWeekday(now));
 }
 
 export type NotifyDeps = {
