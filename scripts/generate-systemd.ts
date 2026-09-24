@@ -43,10 +43,14 @@ function main(): void {
   for (const line of generated) console.log(`  ${line}`);
   console.log('');
   console.log('ミニ PC への反映:');
-  console.log('  sudo cp -r systemd/generated/* /etc/systemd/system/');
+  console.log('  # 配置・ビルド・unit 登録・timer 有効化まで一括で行う');
+  console.log('  sudo bash scripts/deploy-minipc.sh');
+  console.log('');
+  console.log('  # スケジュールだけ入れ替える場合（unit 本体は配置済みが前提）');
+  console.log('  sudo cp -r systemd/generated/. /etc/systemd/system/');
   console.log('  sudo systemctl daemon-reload');
   for (const category of CATEGORIES) {
-    console.log(`  sudo systemctl enable --now tech-radar-collect@${category.key}.timer`);
+    console.log(`  sudo systemctl restart tech-radar-collect@${category.key}.timer`);
   }
 }
 

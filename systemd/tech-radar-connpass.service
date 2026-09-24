@@ -5,21 +5,21 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=techradar
-Group=techradar
-WorkingDirectory=/opt/tech-radar
-EnvironmentFile=/opt/tech-radar/environment
-ExecStart=/usr/bin/node dist/jobs/connpass.js
+User=shogo
+Group=shogo
+WorkingDirectory=/home/shogo/apps/trendnews-autoReporting
+# 秘密値は WorkingDirectory 直下の dotenv ファイルを src/lib/env.ts が読む。
+ExecStart=/home/shogo/.nvm/versions/node/v22.23.2/bin/node dist/jobs/connpass.js
 TimeoutStartSec=300
 
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
+ProtectHome=false
 ProtectKernelTunables=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
-ReadWritePaths=/opt/tech-radar/data
+ReadWritePaths=/home/shogo/apps/trendnews-autoReporting/data
 
 StandardOutput=journal
 StandardError=journal

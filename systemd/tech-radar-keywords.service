@@ -5,25 +5,25 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=techradar
-Group=techradar
-WorkingDirectory=/opt/tech-radar
-EnvironmentFile=/opt/tech-radar/environment
-ExecStart=/usr/bin/node dist/jobs/keywords.js
+User=shogo
+Group=shogo
+WorkingDirectory=/home/shogo/apps/trendnews-autoReporting
+# 秘密値は WorkingDirectory 直下の dotenv ファイルを src/lib/env.ts が読む。
+ExecStart=/home/shogo/.nvm/versions/node/v22.23.2/bin/node dist/jobs/keywords.js
 # 1語ずつ直列に SerpApi を呼ぶ（17語×2、1本最大60秒）
 TimeoutStartSec=900
 
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
+ProtectHome=false
 ProtectKernelTunables=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
-ReadWritePaths=/opt/tech-radar/data
-# 台帳（archive/*-keywords.md）を書く。commit と push は同じ日曜の neta_weekly が行う
-# 先頭の - は、ディレクトリが無くても起動させるため（台帳は縮退可能）
-ReadWritePaths=-/opt/tech-radar/archive
+ReadWritePaths=/home/shogo/apps/trendnews-autoReporting/data
+# 台帳（archive/*-keywords.md）を書く。commit と push は同じ日曜の neta_weekly が行う。
+# 存在しないと 226/NAMESPACE で起動失敗するが、deploy-minipc.sh が作る
+ReadWritePaths=/home/shogo/apps/trendnews-autoReporting/archive
 
 StandardOutput=journal
 StandardError=journal
