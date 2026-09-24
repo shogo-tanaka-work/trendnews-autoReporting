@@ -31,31 +31,31 @@ SQLite へ蓄積し、新着だけを Slack へ通知する。二次情報（X /
 
 収集とスケジュールの正本は `src/config/categories.ts`。
 
-| カテゴリ | 内容 | 方式 | スケジュール(JST) | selector | 1回の上限 |
-|---|---|---|---|---|---|
-| `trend_digest` | はてブ / HN / Qiita / Zenn / GitHub 急上昇 / YouTube 急上昇 / Google Trends | ランキング API | 07:15 | ranking | 15 |（4本柱タグ付け＋台帳出力）
-| `economy_news` | 経済・市場・暗号資産 | RSS | 07:30 | ranking | 8 |
-| `ai_news` | AI 企業公式 / 国内 AI メディア | RSS | 08:00 | ranking | 10 |
-| `engineer_news` | 国内 IT 総合 / AWS / Google Workspace | RSS | 08:10 | ranking | 10 |
-| `tech_cloud` | AWS What's New / Cloudflare Changelog / GitHub Changelog / GCP Release Notes | RSS | 08:40, 20:40 | scoring | 8 |
-| `tech_ai` | LangGraph / LangChain / MCP / ADK / OpenAI Agents / Anthropic SDK ほか | GitHub Releases API | 08:50, 20:50 | scoring | 8 |
-| `tech_web` | React / Next.js / Vite / TanStack / Hono / TypeScript / Node / Bun / Deno | GitHub Releases API | 09:10 | scoring | 8 |
-| `tech_youtube` | 技術系チャンネルの新着 | YouTube Data API v3 | 10:00 | ranking | 5 |
-| `business_news` | 制度・バックオフィス・仕事術 | RSS | 土 09:00 | ranking | 10 |
-| `whiskey_news` | ウイスキー | RSS | 土 10:00 | ranking | 10 |
-| `fitness_news` | 筋トレ | RSS | 日 10:00 | ranking | 10 |
-| Connpass | セミナー・勉強会 | Connpass API v2 | 09:00 | — | — |
+| カテゴリ | 内容 | 方式 | 収集(JST) | 通知 | selector | 1回の上限 |
+|---|---|---|---|---|---|---|
+| `economy_news` | 経済・市場・暗号資産 | RSS | 毎日 08:00 | 収集のたび | ranking | 8 |
+| `engineer_news` | 国内 IT 総合 / AWS / Google Workspace | RSS | 毎日 08:10 | 土曜のみ | ranking | 10 |
+| `whiskey_news` | ウイスキー | RSS | 毎日 19:00 | 土曜のみ | ranking | 10 |
+| Connpass | セミナー・勉強会（直近の金〜日、都内とオンライン） | Connpass API v2 | 木 20:00 | 収集のたび | — | 20（表示） |
+
+AI・クラウドの公式アップデートは shogo-works の日次 AI ニュース運用が担うため、ここでは扱わない。
 
 ### 通知量の設計
 
-通知量は「頻度（`schedule`）」と「1回の件数（`maxPerNotification`）」の2軸で決める。
+通知量は「頻度（`schedule` / `notifyDays`）」と「1回の件数（`maxPerNotification`）」で決める。
 情報源ごとの上限（`maxPerSource`）だけでは、情報源を増やすたびに通知量が増えてしまうため、
 カテゴリ全体の上限を必ず併用する。
 
-速報（1日2回）は `tech_cloud` と `tech_ai` だけに絞っている。実装判断に直結し、翌朝まで
-待つと手戻りが出るのがこの2つだからで、残りは日次または週次のダイジェストにしている。
+見切れない量の通知は読まれないため、平日の通知は朝の `economy_news` 1本に絞っている。
 
-週次カテゴリは7日分の候補から上位を選ぶため、件数が減るだけでなく選抜の質も上がる。
+`notifyDays` を指定したカテゴリは、収集は `schedule` のとおり毎日行い、通知は指定曜日（JST）だけ
+行う。それ以外の日は未通知の記事を持ち越し、通知日に溜まった分から上位を選ぶ。RSS は直近数十件しか
+持たないため、収集まで週1にすると取りこぼす。RSS には人気の指標がないので、上位は各日の
+フィード先頭に近い記事になる。
+
+Connpass は金〜日に参加できるイベントを、前の木曜夜にまとめて確認する運用に合わせている。
+取得は開催日時順で API 上限の 100 件までとし、Slack には 20 件を載せ、残りは件数だけ示す。
+人気ランキングは Web で見られるため取得しない。
 
 ### selector
 
@@ -71,6 +71,7 @@ SQLite へ蓄積し、新着だけを Slack へ通知する。二次情報（X /
 ### ランキング情報源（`type: 'ranking'`）
 
 「決めた購読先の新着」ではなく「世の中の上位N件」を取る情報源。`provider` で実装を切り替える。
+`trend_digest` の廃止により、現在これを使うカテゴリはない（実装は残している）。
 
 | provider | 取得元 | 鍵 | 重み | 拾うもの |
 |---|---|---|---|---|
@@ -89,7 +90,7 @@ SQLite へ蓄積し、新着だけを Slack へ通知する。二次情報（X /
 
 ### 発信4本柱と昇格台帳
 
-`trend_digest` だけは `pillars` を設定し、発信の4本柱（`src/config/pillars.ts`）で
+`pillars` を設定したカテゴリは、発信の4本柱（`src/config/pillars.ts`）で
 タグ付けする。スコア順のまま切ると、点数は高いが発信に繋がらない一般ニュースが上位を
 占めるため、**タグが付いたものを優先し、無タグには最大3枠しか割かない**。
 
@@ -99,6 +100,8 @@ SQLite へ蓄積し、新着だけを Slack へ通知する。二次情報（X /
 | 業務 | 自動化・効率化・SaaS・ノーコード |
 | 組織 | チーム・マネジメント・採用・評価制度 |
 | キャリア | 転職・副業・学習・資格 |
+
+`trend_digest` の廃止により、現在 `pillars` と `archiveDigest` を持つカテゴリはない（実装は残している）。
 
 `archiveDigest: true` のカテゴリは、通知できた記事を `archive/YYYY/MM/YYYY-MM-DD.md` へ
 チェックボックス付きの Markdown で書き出す。人が読み返して `picks/` へ昇格させるための台帳で、
@@ -143,26 +146,16 @@ Slack は「気づく」ための入口という役割分担にしている。
 ```dotenv
 # Slack
 SLACK_BOT_TOKEN=xoxb-your-token-here
-SLACK_CHANNEL_AI_NEWS=C0XXXXXXXXX
+# 未設定なら収集だけ行い通知はスキップ
+SLACK_CHANNEL_ECONOMY_NEWS=C0XXXXXXXXX
 SLACK_CHANNEL_ENGINEER_NEWS=C0XXXXXXXXX
 SLACK_CHANNEL_WHISKEY_NEWS=C0XXXXXXXXX
-SLACK_CHANNEL_FITNESS_NEWS=C0XXXXXXXXX
-SLACK_CHANNEL_BUSINESS_NEWS=C0XXXXXXXXX
-SLACK_CHANNEL_ECONOMY_NEWS=C0XXXXXXXXX
-# 以下は新規（チャンネル作成後に設定する。未設定なら収集だけ行い通知はスキップ）
-SLACK_CHANNEL_TECH_CLOUD=C0XXXXXXXXX
-SLACK_CHANNEL_TECH_WEB=C0XXXXXXXXX
-SLACK_CHANNEL_TECH_AI=C0XXXXXXXXX
-SLACK_CHANNEL_TECH_YOUTUBE=C0XXXXXXXXX
-SLACK_CHANNEL_TREND_DIGEST=C0XXXXXXXXX
 
 # 情報源の API キー
 # GITHUB_TOKEN は public repo の read のみ（未設定でも動くがレート制限が 60 req/h になる）
 GITHUB_TOKEN=
-# 未設定なら tech_youtube と trend_digest の YouTube 急上昇だけがスキップされる
+# YouTube / Google Trends（SerpAPI）は ranking 情報源で使う。現在これを使うカテゴリはない
 YOUTUBE_API_KEY=
-# Google Trends 急上昇ワード（SerpAPI。無料枠 250検索/月、日次1回なら月30回）
-# 未設定なら trend_digest の Google Trends だけがスキップされる
 SERPAPI_API_KEY=
 CONNPASS_API_KEY=your-connpass-api-key-here
 SLACK_CHANNEL_CONNPASS=C0XXXXXXXXX
@@ -177,7 +170,9 @@ ADMIN_TOKEN=
 LOG_LEVEL=info
 ```
 
-**廃止した変数**: `CRON_*`（→ systemd timer / `categories.ts` の `schedule`）、
+**廃止した変数**: `SLACK_CHANNEL_AI_NEWS` / `_BUSINESS_NEWS` / `_FITNESS_NEWS` / `_TECH_CLOUD` /
+`_TECH_WEB` / `_TECH_AI` / `_TECH_YOUTUBE` / `_TREND_DIGEST`（カテゴリ廃止）、
+`CRON_*`（→ systemd timer / `categories.ts` の `schedule`）、
 `FILTER_HOURS`（→ DB による重複排除）。
 
 ## やらないこと（スコープ外）

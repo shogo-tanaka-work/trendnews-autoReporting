@@ -1,4 +1,5 @@
 /** 表示用の日時整形。保存は常に ISO8601(UTC)、表示だけ JST に寄せる。 */
+import { WEEKDAYS, type Weekday } from '../domain/source.js';
 
 const JST = 'Asia/Tokyo';
 
@@ -35,4 +36,15 @@ export function formatJstEvent(isoDate: string | null | undefined): string {
   });
 
   return `${body}(${weekday})`;
+}
+
+function isWeekday(value: string): value is Weekday {
+  return (WEEKDAYS as readonly string[]).includes(value);
+}
+
+/** JST での曜日。systemd timer と同じく Asia/Tokyo 基準で判定する */
+export function tokyoWeekday(date: Date): Weekday {
+  const weekday = date.toLocaleDateString('en-US', { timeZone: JST, weekday: 'short' });
+  if (!isWeekday(weekday)) throw new Error(`曜日を判定できません: ${weekday}`);
+  return weekday;
 }

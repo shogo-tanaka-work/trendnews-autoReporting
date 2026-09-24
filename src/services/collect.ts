@@ -21,7 +21,7 @@ import type { NotifiableArticle } from '../notifiers/blocks/articles.js';
 import { buildConnpassMessage } from '../notifiers/blocks/connpass.js';
 import { dedupeByExternalId, toNewArticle } from './normalize.js';
 import { renderDigest } from './digest.js';
-import { notifyArticles, type CollectedEntry } from './notify.js';
+import { isNotifyDay, notifyArticles, type CollectedEntry } from './notify.js';
 import { scoreArticle } from './score.js';
 
 export type CollectDeps = {
@@ -259,6 +259,12 @@ export async function collectCategory(deps: CollectDeps, category: CategoryConfi
 
   if (entries.length === 0) {
     logger.info('新着がないため通知をスキップします', { job: jobName });
+  } else if (!isNotifyDay(category, deps.now())) {
+    // 未通知のまま残し、通知日にまとめて選抜する
+    logger.info('通知日ではないため未通知の記事を持ち越します', {
+      job: jobName,
+      pending: entries.length,
+    });
   } else if (!channelId) {
     logger.warn('Slack チャンネル未設定のため通知をスキップします', {
       job: jobName,
@@ -328,14 +334,13 @@ export async function collectByKey(deps: CollectDeps, categoryKey: string): Prom
 }
 
 export type ConnpassSummary = {
-  upcoming: number;
-  popular: number;
+  events: number;
   notified: boolean;
 };
 
 /**
  * Connpass はイベント情報であり articles とはライフサイクルが異なるため、
- * DB へは入れずその回の内容をそのまま通知する（現行仕様の維持）。
+ * DB へは入れずその回の内容をそのまま通知する。
  */
 export async function collectConnpass(
   deps: CollectDeps,
@@ -349,10 +354,9 @@ export async function collectConnpass(
 
   try {
     const collector = new ConnpassCollector(deps.connpassApiKey);
-    const upcoming = await collector.fetchUpcomingEvents(keywords, startedAt);
-    const popular = await collector.fetchPopularEvents(keywords, startedAt);
+    const { events, totalAvailable } = await collector.fetchWeekendEvents(keywords, startedAt);
 
-    const message = buildConnpassMessage(upcoming, popular, deps.now());
+    const message = buildConnpassMessage(events, totalAvailable, deps.now());
     let notified = false;
 
     if (message && channelId) {
@@ -364,19 +368,15 @@ export async function collectConnpass(
 
     await deps.repos.jobRuns.finish(jobRunId, {
       status: 'success',
-      processedCount: upcoming.length + popular.length,
-      newCount: upcoming.length,
+      processedCount: events.length,
+      newCount: events.length,
       errorMessage: null,
       finishedAt: deps.now().toISOString(),
     });
 
-    logger.info('Connpass の収集を終了します', {
-      upcoming: upcoming.length,
-      popular: popular.length,
-      notified,
-    });
+    logger.info('Connpass の収集を終了します', { events: events.length, notified });
 
-    return { upcoming: upcoming.length, popular: popular.length, notified };
+    return { events: events.length, notified };
   } catch (err) {
     const message = toErrorMessage(err);
     await deps.repos.jobRuns.finish(jobRunId, {

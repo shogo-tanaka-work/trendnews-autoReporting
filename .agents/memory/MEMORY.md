@@ -12,24 +12,26 @@
 
 ## 現在地
 
-- フェーズ: （例: MVPコア機能実装中）
-- 直近の作業: （例: 認証フローのテスト追加）
-- 次にやること: （例: 一覧画面のページング）
+- フェーズ: ミニ PC（`/opt/tech-radar`、systemd）で本番稼働中。通知は economy / engineer / whiskey / connpass の4本に絞った。
+- 次にやること: ミニ PC へ反映し、廃止カテゴリの timer を止める（手順は README「カテゴリを廃止したとき」）。connpass を手動実行して都内・オンラインに絞れているか確認する。
+- その後: キーワードトレンド通知と、発信ネタへの昇格（posting-manager 連携）の設計。
 
 ## 決定済みで動かさないこと
 
-- （例: DBはSupabase。移行は v2 まで検討しない）
+- AI・クラウドの公式アップデートは shogo-works の日次 AI ニュース運用が担う。ここへ戻さない。
+- 平日の通知は朝の economy_news だけ。増やすときは曜日指定（`notifyDays`）を先に検討する。
 
 ## 環境と実行
 
-- 開発起動: （例: `npm run dev`）
-- 検証: （例: `npm test` → `npx tsc --noEmit` → `npm run lint`）
-- 秘密値の保管場所: （例: ローカルは`.env.local`、本番はVercel Environment Variables。変数名は`.env.example`参照）
+- 検証: `npm run typecheck` → `npm test` → `npm run build` → `npm run gen:systemd`
+- 秘密値の保管場所: ミニ PC の `/opt/tech-radar/environment`（変数名は docs/SPEC.md「環境変数」）。
 
 ## 未解決の課題
 
-- （例: 大量データ時の一覧描画が遅い。計測は未実施）
+- ミニ PC が GitHub 上の main と同じ版で動いているか未確認。台帳 push（archive/）は origin に 2026-08-27 分しか届いていない。
+- Connpass API v2 で `prefecture` と `keyword_or`・`ymd` の結合条件（AND/OR）は公式資料に記載がなく、実機で未確認。
+- 通知日（土曜）に実行を逃すと、`notifyDays` のカテゴリは翌週の通知日まで持ち越しになる。
 
 ## 落とし穴
 
-- （例: `foo()`は内部で正規化するので、呼び出し側で二重に正規化しない）
+- `gen:systemd` は配置済みの timer を消さない。カテゴリを削除したらミニ PC 側で disable する。

@@ -77,13 +77,21 @@ export type SourceConfig =
  */
 export type SelectorKind = 'per_source' | 'ranking' | 'scoring';
 
+export const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+export type Weekday = (typeof WEEKDAYS)[number];
+
 export type CategoryConfig = {
   key: string;
   label: string;
   /** Slack チャンネル ID を保持する環境変数名 */
   channelEnvKey: string;
-  /** systemd timer の OnCalendar 式（Asia/Tokyo） */
+  /** systemd timer の OnCalendar 式（Asia/Tokyo）。収集はこの頻度で行う */
   schedule: string;
+  /**
+   * 通知する曜日（Asia/Tokyo）。未指定は収集のたびに通知する。
+   * 指定した曜日以外は収集だけ行い、未通知の記事を次の通知日へ持ち越す。
+   */
+  notifyDays?: Weekday[];
   /** 未指定は 'per_source'（従来の挙動） */
   selector?: SelectorKind;
   /** selector: 'scoring' のとき、この点数未満の記事は通知しない */

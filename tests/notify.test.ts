@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Article } from '../src/domain/article.js';
 import type { CategoryConfig } from '../src/domain/source.js';
-import { notifyArticles, selectForNotification, type CollectedEntry } from '../src/services/notify.js';
+import { isNotifyDay, notifyArticles, selectForNotification, type CollectedEntry } from '../src/services/notify.js';
 
 function article(id: number, title: string, publishedAt: string): Article {
   return {
@@ -126,5 +126,26 @@ describe('notifyArticles', () => {
     expect(result.failedMessages).toBe(1);
     // 対象外記事の空配列マークのみが呼ばれる
     expect(markNotified.mock.calls.map((call) => call[0])).toEqual([[]]);
+  });
+});
+
+describe('isNotifyDay', () => {
+  const weekly: CategoryConfig = { ...scoringCategory, notifyDays: ['Sat'] };
+
+  it('notifyDays 未指定なら毎回通知する', () => {
+    expect(isNotifyDay(scoringCategory, new Date('2026-09-23T00:00:00.000Z'))).toBe(true);
+  });
+
+  it('指定した曜日だけ通知する', () => {
+    // 2026-09-26 は土曜、2026-09-25 は金曜（いずれも JST 09:10）
+    expect(isNotifyDay(weekly, new Date('2026-09-26T00:10:00.000Z'))).toBe(true);
+    expect(isNotifyDay(weekly, new Date('2026-09-25T00:10:00.000Z'))).toBe(false);
+  });
+
+  it('曜日は UTC ではなく JST で判定する', () => {
+    // UTC では金曜 15:30、JST では土曜 00:30
+    expect(isNotifyDay(weekly, new Date('2026-09-25T15:30:00.000Z'))).toBe(true);
+    // UTC では土曜 15:30、JST では日曜 00:30
+    expect(isNotifyDay(weekly, new Date('2026-09-26T15:30:00.000Z'))).toBe(false);
   });
 });

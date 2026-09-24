@@ -23,7 +23,7 @@ npm test
 ## 開発コマンド
 
 ```bash
-npm run collect -- tech_cloud   # 単一カテゴリを収集（カテゴリ一覧は npm run collect -- nope で表示）
+npm run collect -- engineer_news   # 単一カテゴリを収集（カテゴリ一覧は npm run collect -- nope で表示）
 npm run collect -- all          # 全カテゴリを直列で収集
 npm run connpass                # Connpass セミナー情報を通知
 npm run dev                     # Hono API を起動（http://127.0.0.1:3000）
@@ -47,7 +47,7 @@ curl http://127.0.0.1:3000/categories
 curl -X POST http://127.0.0.1:3000/admin/collect \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"category":"tech_cloud"}'
+  -d '{"category":"engineer_news"}'
 ```
 
 ## Ubuntu ミニ PC へのデプロイ
@@ -69,25 +69,34 @@ sudo vi /opt/tech-radar/environment   # docs/SPEC.md の「環境変数」を KE
 npm run gen:systemd
 sudo cp systemd/*.service systemd/*.timer /etc/systemd/system/
 sudo cp -r systemd/generated/* /etc/systemd/system/
-# trend_digest は台帳の commit / push を行うため専用の drop-in が要る
-sudo cp -r 'systemd/tech-radar-collect@trend_digest.service.d' /etc/systemd/system/
 sudo systemctl daemon-reload
 
 # 4. API と収集タイマーを有効化
 sudo systemctl enable --now tech-radar-api.service
 sudo systemctl enable --now tech-radar-connpass.timer
-for c in ai_news engineer_news whiskey_news fitness_news business_news economy_news \
-         trend_digest tech_cloud tech_web tech_ai tech_youtube; do
+for c in economy_news engineer_news whiskey_news; do
   sudo systemctl enable --now "tech-radar-collect@$c.timer"
 done
+```
+
+### カテゴリを廃止したとき
+
+`gen:systemd` は `/etc/systemd/system/` に配置済みの timer を消さない。残すと存在しない
+カテゴリとして毎回失敗するため、手で止める。
+
+```bash
+c=<廃止したカテゴリ>
+sudo systemctl disable --now "tech-radar-collect@$c.timer"
+sudo rm -r "/etc/systemd/system/tech-radar-collect@$c.timer.d"
+sudo systemctl daemon-reload
 ```
 
 ### 運用確認
 
 ```bash
 systemctl list-timers 'tech-radar-*'
-journalctl -u tech-radar-collect@tech_cloud --since today
-systemctl start tech-radar-collect@tech_cloud   # 手動で1回走らせる
+journalctl -u tech-radar-collect@engineer_news --since today
+systemctl start tech-radar-collect@engineer_news   # 手動で1回走らせる
 sqlite3 /opt/tech-radar/data/tech-radar.sqlite \
   'SELECT job_name, status, new_count, error_message FROM job_runs ORDER BY id DESC LIMIT 10;'
 ```
@@ -96,6 +105,9 @@ sqlite3 /opt/tech-radar/data/tech-radar.sqlite \
 `npm run gen:systemd` → drop-in を再配置 → `systemctl daemon-reload` を行う。
 
 ## 昇格の運用（trend_digest）
+
+**`trend_digest` は廃止したため、この運用は現在止まっている。** 仕組み（`archiveDigest` と
+`scripts/commit-archive.sh`）は残しているので、再開するときは以下に従う。
 
 トレンドダイジェストは Slack で気づくための入口で、掘る対象を選ぶのは `archive/` の台帳。
 

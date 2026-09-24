@@ -2,16 +2,17 @@
  * Connpass API v2 からセミナー・イベント情報を取得する。
  *
  * 記事とはデータ形状が異なる（開催予定のイベント）ため articles テーブルへは入れず、
- * 収集したその回の内容をそのまま Slack へ通知する現行仕様を維持する。
+ * 収集したその回の内容をそのまま Slack へ通知する。
+ * 人気ランキングは Web で見られるため取得しない。
  *
  * @see https://connpass.com/about/api/v2/
  */
 import { z } from 'zod';
+import type { Weekday } from '../domain/source.js';
+import { tokyoWeekday } from '../lib/datetime.js';
 import { httpGetJson } from '../lib/http.js';
 
 const API_BASE = 'https://connpass.com/api/v2/events/';
-/** API v2 は 1 秒 1 リクエストのレート制限がある */
-const RATE_LIMIT_INTERVAL_MS = 1100;
 
 const ConnpassEventSchema = z.object({
   id: z.number(),
@@ -30,34 +31,56 @@ const ConnpassEventSchema = z.object({
 });
 
 const ConnpassResponseSchema = z.object({
+  results_available: z.number().optional(),
   events: z.array(ConnpassEventSchema).optional(),
 });
 
 export type ConnpassEvent = z.infer<typeof ConnpassEventSchema>;
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+/** 通知対象の開催地。Connpass API v2 の prefecture コード（online はオンライン開催） */
+const PREFECTURES = ['tokyo', 'online'];
+
+/** API の上限。開催日時順なので、超えた分は日曜側が落ちる（件数は totalAvailable で伝える） */
+const FETCH_COUNT = 100;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function tokyoYmd(date: Date): string {
+  // en-CA は YYYY-MM-DD 形式で返る
+  return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Tokyo' }).replaceAll('-', '');
 }
 
-/** 今日から days 日分の ymd パラメータを組み立てる */
-function ymdRange(days: number, today: Date): string[] {
-  const result: string[] = [];
+/**
+ * 直近の週末（金〜日）の日付を yyyymmdd で返す。純関数。
+ *
+ * 平日に実行したら次の金〜日、週末に実行したらその週末の残りの日を返す。
+ * 金土日に参加できるイベントを、前の木曜夜にまとめて確認する運用に合わせている。
+ */
+export function upcomingWeekendYmd(now: Date): string[] {
+  const weekday = tokyoWeekday(now);
+  const offsets: Record<Weekday, number[]> = {
+    Mon: [4, 5, 6],
+    Tue: [3, 4, 5],
+    Wed: [2, 3, 4],
+    Thu: [1, 2, 3],
+    Fri: [0, 1, 2],
+    Sat: [0, 1],
+    Sun: [0],
+  };
 
-  for (let i = 0; i < days; i++) {
-    const date = new Date(today);
-    date.setDate(date.getDate() + i);
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    result.push(`${date.getFullYear()}${month}${day}`);
-  }
-
-  return result;
+  return offsets[weekday].map((days) => tokyoYmd(new Date(now.getTime() + days * DAY_MS)));
 }
+
+export type ConnpassSearchResult = {
+  events: ConnpassEvent[];
+  /** 条件に合う全件数。取得上限で切れた分も含む */
+  totalAvailable: number;
+};
 
 export class ConnpassCollector {
   constructor(private readonly apiKey: string) {}
 
-  private async callApi(params: Record<string, string | number>): Promise<ConnpassEvent[]> {
+  private async callApi(params: Record<string, string | number>): Promise<ConnpassSearchResult> {
     const url = new URL(API_BASE);
     for (const [name, value] of Object.entries(params)) url.searchParams.set(name, String(value));
 
@@ -71,33 +94,20 @@ export class ConnpassCollector {
       throw new Error('Connpass API のレスポンス形式が想定と異なります');
     }
 
-    return parsed.data.events ?? [];
+    const events = parsed.data.events ?? [];
+    return { events, totalAvailable: parsed.data.results_available ?? events.length };
   }
 
-  /** 今日〜7日後までの直近イベント（開催日順） */
-  async fetchUpcomingEvents(keywords: string[], today: Date, count = 20): Promise<ConnpassEvent[]> {
+  /** 直近の週末（金〜日）に都内またはオンラインで開催されるイベント（開催日順） */
+  async fetchWeekendEvents(keywords: string[], now: Date): Promise<ConnpassSearchResult> {
     const params: Record<string, string | number> = {
-      ymd: ymdRange(7, today).join(','),
-      count,
-      order: 2, // 開催日順
+      ymd: upcomingWeekendYmd(now).join(','),
+      prefecture: PREFECTURES.join(','),
+      count: FETCH_COUNT,
+      order: 2, // 開催日時順
     };
     if (keywords.length > 0) params.keyword_or = keywords.join(',');
 
     return this.callApi(params);
-  }
-
-  /** 今後30日分から参加者数の多い順に並べたもの */
-  async fetchPopularEvents(keywords: string[], today: Date, count = 30): Promise<ConnpassEvent[]> {
-    await sleep(RATE_LIMIT_INTERVAL_MS);
-
-    const params: Record<string, string | number> = {
-      ymd: ymdRange(30, today).join(','),
-      count,
-      order: 2,
-    };
-    if (keywords.length > 0) params.keyword_or = keywords.join(',');
-
-    const events = await this.callApi(params);
-    return [...events].sort((a, b) => (b.accepted ?? 0) - (a.accepted ?? 0));
   }
 }
