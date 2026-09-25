@@ -21,7 +21,7 @@
     "@slack/web-api": "^8.0.0",
     "better-sqlite3": "^13.0.3",
     "dotenv": "^16.0.0",
-    "hono": "^4.6.0",
+    "hono": "^4.13.8",
     "rss-parser": "^3.13.0",
     "zod": "^3.23.0"
   },
